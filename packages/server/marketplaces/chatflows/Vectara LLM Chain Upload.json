@@ -16,7 +16,12 @@
                 "version": 2,
                 "name": "chatOpenAI",
                 "type": "ChatOpenAI",
-                "baseClasses": ["ChatOpenAI", "BaseChatModel", "BaseLanguageModel", "Runnable"],
+                "baseClasses": [
+                    "ChatOpenAI",
+                    "BaseChatModel",
+                    "BaseLanguageModel",
+                    "Runnable"
+                ],
                 "category": "Chat Models",
                 "description": "Wrapper around OpenAI large language models that use the Chat endpoint",
                 "inputParams": [
@@ -24,7 +29,9 @@
                         "label": "Connect Credential",
                         "name": "credential",
                         "type": "credential",
-                        "credentialNames": ["openAIApi"],
+                        "credentialNames": [
+                            "openAIApi"
+                        ],
                         "id": "chatOpenAI_0-input-credential-credential"
                     },
                     {
@@ -193,7 +200,11 @@
                 "version": 1,
                 "name": "conversationalRetrievalQAChain",
                 "type": "ConversationalRetrievalQAChain",
-                "baseClasses": ["ConversationalRetrievalQAChain", "BaseChain", "Runnable"],
+                "baseClasses": [
+                    "ConversationalRetrievalQAChain",
+                    "BaseChain",
+                    "Runnable"
+                ],
                 "category": "Chains",
                 "description": "Document QA - built on RetrievalQAChain to provide a chat history component",
                 "inputParams": [
@@ -303,7 +314,11 @@
                 "version": 1,
                 "name": "vectara",
                 "type": "Vectara",
-                "baseClasses": ["Vectara", "VectorStoreRetriever", "BaseRetriever"],
+                "baseClasses": [
+                    "Vectara",
+                    "VectorStoreRetriever",
+                    "BaseRetriever"
+                ],
                 "category": "Vector Stores",
                 "description": "Upsert embedded data and perform similarity search upon query using Vectara, a LLM-powered search-as-a-service",
                 "inputParams": [
@@ -311,7 +326,9 @@
                         "label": "Connect Credential",
                         "name": "credential",
                         "type": "credential",
-                        "credentialNames": ["vectaraApi"],
+                        "credentialNames": [
+                            "vectaraApi"
+                        ],
                         "id": "vectara_0-input-credential-credential"
                     },
                     {
@@ -325,7 +342,7 @@
                     {
                         "label": "Metadata Filter",
                         "name": "filter",
-                        "description": "Filter to apply to Vectara metadata. Refer to the <a target=\"_blank\" href=\"https://docs.flowiseai.com/vector-stores/vectara\">documentation</a> on how to use Vectara filters with Flowise.",
+                        "description": "Filter to apply to Vectara metadata.",
                         "type": "string",
                         "additionalParams": true,
                         "optional": true,

@@ -1,5 +1,5 @@
 {
-    "description": "Flowise Docs Github QnA using conversational retrieval QA chain",
+    "description": "Docs Github QnA using conversational retrieval QA chain",
     "badge": "POPULAR",
     "nodes": [
         {
@@ -17,7 +17,12 @@
                 "name": "markdownTextSplitter",
                 "version": 1,
                 "type": "MarkdownTextSplitter",
-                "baseClasses": ["MarkdownTextSplitter", "RecursiveCharacterTextSplitter", "TextSplitter", "BaseDocumentTransformer"],
+                "baseClasses": [
+                    "MarkdownTextSplitter",
+                    "RecursiveCharacterTextSplitter",
+                    "TextSplitter",
+                    "BaseDocumentTransformer"
+                ],
                 "category": "Text Splitters",
                 "description": "Split your content into documents based on the Markdown headers",
                 "inputParams": [
@@ -75,7 +80,11 @@
                 "name": "memoryVectorStore",
                 "version": 1,
                 "type": "Memory",
-                "baseClasses": ["Memory", "VectorStoreRetriever", "BaseRetriever"],
+                "baseClasses": [
+                    "Memory",
+                    "VectorStoreRetriever",
+                    "BaseRetriever"
+                ],
                 "category": "Vector Stores",
                 "description": "In-memory vectorstore that stores embeddings and does an exact, linear search for the most similar embeddings.",
                 "inputParams": [
@@ -105,7 +114,9 @@
                     }
                 ],
                 "inputs": {
-                    "document": ["{{github_0.data.instance}}"],
+                    "document": [
+                        "{{github_0.data.instance}}"
+                    ],
                     "embeddings": "{{openAIEmbeddings_0.data.instance}}",
                     "topK": ""
                 },
@@ -158,7 +169,10 @@
                 "name": "conversationalRetrievalQAChain",
                 "version": 1,
                 "type": "ConversationalRetrievalQAChain",
-                "baseClasses": ["ConversationalRetrievalQAChain", "BaseChain"],
+                "baseClasses": [
+                    "ConversationalRetrievalQAChain",
+                    "BaseChain"
+                ],
                 "category": "Chains",
                 "description": "Document QA - built on RetrievalQAChain to provide a chat history component",
                 "inputParams": [
@@ -268,7 +282,9 @@
                 "name": "github",
                 "version": 2,
                 "type": "Document",
-                "baseClasses": ["Document"],
+                "baseClasses": [
+                    "Document"
+                ],
                 "category": "Document Loaders",
                 "description": "Load data from a GitHub repository",
                 "inputParams": [
@@ -278,14 +294,16 @@
                         "type": "credential",
                         "description": "Only needed when accessing private repo",
                         "optional": true,
-                        "credentialNames": ["githubApi"],
+                        "credentialNames": [
+                            "githubApi"
+                        ],
                         "id": "github_0-input-credential-credential"
                     },
                     {
                         "label": "Repo Link",
                         "name": "repoLink",
                         "type": "string",
-                        "placeholder": "https://github.com/FlowiseAI/Flowise",
+                        "placeholder": "https://github.com/Answers-AI/daisy",
                         "id": "github_0-input-repoLink-string"
                     },
                     {
@@ -350,7 +368,7 @@
                     }
                 ],
                 "inputs": {
-                    "repoLink": "https://github.com/FlowiseAI/FlowiseDocs",
+                    "repoLink": "https://github.com/Answers-AI/daisy",
                     "branch": "main",
                     "recursive": true,
                     "textSplitter": "{{markdownTextSplitter_0.data.instance}}",
@@ -389,7 +407,11 @@
                 "name": "chatOpenAI",
                 "version": 2,
                 "type": "ChatOpenAI",
-                "baseClasses": ["ChatOpenAI", "BaseChatModel", "BaseLanguageModel"],
+                "baseClasses": [
+                    "ChatOpenAI",
+                    "BaseChatModel",
+                    "BaseLanguageModel"
+                ],
                 "category": "Chat Models",
                 "description": "Wrapper around OpenAI large language models that use the Chat endpoint",
                 "inputParams": [
@@ -397,7 +419,9 @@
                         "label": "Connect Credential",
                         "name": "credential",
                         "type": "credential",
-                        "credentialNames": ["openAIApi"],
+                        "credentialNames": [
+                            "openAIApi"
+                        ],
                         "id": "chatOpenAI_0-input-credential-credential"
                     },
                     {
@@ -560,7 +584,10 @@
                 "name": "openAIEmbeddings",
                 "version": 1,
                 "type": "OpenAIEmbeddings",
-                "baseClasses": ["OpenAIEmbeddings", "Embeddings"],
+                "baseClasses": [
+                    "OpenAIEmbeddings",
+                    "Embeddings"
+                ],
                 "category": "Embeddings",
                 "description": "OpenAI API to generate embeddings for a given text",
                 "inputParams": [
@@ -568,7 +595,9 @@
                         "label": "Connect Credential",
                         "name": "credential",
                         "type": "credential",
-                        "credentialNames": ["openAIApi"],
+                        "credentialNames": [
+                            "openAIApi"
+                        ],
                         "id": "openAIEmbeddings_0-input-credential-credential"
                     },
                     {
