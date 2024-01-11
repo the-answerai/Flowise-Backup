@@ -77,6 +77,13 @@ class Airtable_DocumentLoaders implements INode {
                 type: 'json',
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Text Field Content',
+                name: 'textField',
+                type: 'string',
+                optional: true,
+                description: 'The field to use as the pageContent, default will split the entire record JSON'
             }
         ]
     }
@@ -87,6 +94,7 @@ class Airtable_DocumentLoaders implements INode {
         const limit = nodeData.inputs?.limit as string
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
         const metadata = nodeData.inputs?.metadata
+        const textField = nodeData.inputs?.textField as string
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const accessToken = getCredentialParam('accessToken', credentialData, nodeData)
@@ -96,6 +104,7 @@ class Airtable_DocumentLoaders implements INode {
             tableId,
             returnAll,
             accessToken,
+            textField,
             limit: limit ? parseInt(limit, 10) : 100
         }
 
@@ -135,6 +144,7 @@ interface AirtableLoaderParams {
     accessToken: string
     limit?: number
     returnAll?: boolean
+    textField?: string
 }
 
 interface AirtableLoaderResponse {
@@ -159,13 +169,16 @@ class AirtableLoader extends BaseDocumentLoader {
 
     public readonly returnAll: boolean
 
-    constructor({ baseId, tableId, accessToken, limit = 100, returnAll = false }: AirtableLoaderParams) {
+    public readonly textField?: string
+
+    constructor({ baseId, tableId, accessToken, limit = 100, returnAll = false, textField }: AirtableLoaderParams) {
         super()
         this.baseId = baseId
         this.tableId = tableId
         this.accessToken = accessToken
         this.limit = limit
         this.returnAll = returnAll
+        this.textField = textField
     }
 
     public async load(): Promise<Document[]> {
@@ -189,39 +202,51 @@ class AirtableLoader extends BaseDocumentLoader {
         }
     }
 
-    private createDocumentFromPage(page: AirtableLoaderPage): Document {
+    private createDocumentFromPage(page: AirtableLoaderPage, pageField?: string): Document {
         // Generate the URL
         const pageUrl = `https://api.airtable.com/v0/${this.baseId}/${this.tableId}/${page.id}`
 
+        // console.log('GOT HERE!!!', pageField)
+        // Determine the page content
+        let pageContent: string
+        if (pageField && Object.prototype.hasOwnProperty.call(page.fields, pageField)) {
+            pageContent = page.fields[pageField]
+        } else {
+            pageContent = JSON.stringify(page.fields, null, 2)
+        }
+
+        console.log('Page Content', pageContent)
+
         // Return a langchain document
         return new Document({
-            pageContent: JSON.stringify(page.fields, null, 2),
+            pageContent: pageContent,
             metadata: {
-                url: pageUrl
+                url: pageUrl,
+                doctype: 'meeting'
             }
         })
     }
 
     private async loadLimit(): Promise<Document[]> {
-        const params = { maxRecords: this.limit }
+        const params = { maxRecords: this.limit, textField: this.textField }
         const data = await this.fetchAirtableData(`https://api.airtable.com/v0/${this.baseId}/${this.tableId}`, params)
         if (data.records.length === 0) {
             return []
         }
-        return data.records.map((page) => this.createDocumentFromPage(page))
+        return data.records.map((page) => this.createDocumentFromPage(page, params.textField))
     }
 
     private async loadAll(): Promise<Document[]> {
-        const params: ICommonObject = { pageSize: 100 }
+        const params: ICommonObject = { pageSize: 100, textField: this.textField }
         let data: AirtableLoaderResponse
         let returnPages: AirtableLoaderPage[] = []
-
+        console.log('GOT HERE!!!', params)
         do {
             data = await this.fetchAirtableData(`https://api.airtable.com/v0/${this.baseId}/${this.tableId}`, params)
             returnPages.push.apply(returnPages, data.records)
             params.offset = data.offset
         } while (data.offset !== undefined)
-        return returnPages.map((page) => this.createDocumentFromPage(page))
+        return returnPages.map((page) => this.createDocumentFromPage(page, params.textField))
     }
 }
 

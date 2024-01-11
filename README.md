@@ -77,7 +77,7 @@ Flowise has 3 different modules in a single mono repository.
 
 -   Install [Yarn v1](https://classic.yarnpkg.com/en/docs/install)
     ```bash
-    npm i -g yarn
+    yarn set version 1.22.19
     ```
 
 ### Setup

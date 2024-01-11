@@ -17,7 +17,9 @@
                 "version": 2,
                 "name": "openAIAssistant",
                 "type": "OpenAIAssistant",
-                "baseClasses": ["OpenAIAssistant"],
+                "baseClasses": [
+                    "OpenAIAssistant"
+                ],
                 "category": "Agents",
                 "description": "An agent that uses OpenAI Assistant API to pick the tool and args to call",
                 "inputParams": [
@@ -49,7 +51,11 @@
                 ],
                 "inputs": {
                     "selectedAssistant": "",
-                    "tools": ["{{calculator_0.data.instance}}", "{{serper_0.data.instance}}", "{{customTool_0.data.instance}}"]
+                    "tools": [
+                        "{{calculator_0.data.instance}}",
+                        "{{serper_0.data.instance}}",
+                        "{{customTool_0.data.instance}}"
+                    ]
                 },
                 "outputAnchors": [
                     {
@@ -84,7 +90,12 @@
                 "version": 1,
                 "name": "calculator",
                 "type": "Calculator",
-                "baseClasses": ["Calculator", "Tool", "StructuredTool", "Runnable"],
+                "baseClasses": [
+                    "Calculator",
+                    "Tool",
+                    "StructuredTool",
+                    "Runnable"
+                ],
                 "category": "Tools",
                 "description": "Perform calculations on response",
                 "inputParams": [],
@@ -123,9 +134,14 @@
                 "version": 1,
                 "name": "customTool",
                 "type": "CustomTool",
-                "baseClasses": ["CustomTool", "Tool", "StructuredTool", "Runnable"],
+                "baseClasses": [
+                    "CustomTool",
+                    "Tool",
+                    "StructuredTool",
+                    "Runnable"
+                ],
                 "category": "Tools",
-                "description": "Use custom tool you've created in Flowise within chatflow",
+                "description": "Use custom tool you've created in AnswerAI within chatflow",
                 "inputParams": [
                     {
                         "label": "Select Tool",
@@ -172,7 +188,12 @@
                 "version": 1,
                 "name": "serper",
                 "type": "Serper",
-                "baseClasses": ["Serper", "Tool", "StructuredTool", "Runnable"],
+                "baseClasses": [
+                    "Serper",
+                    "Tool",
+                    "StructuredTool",
+                    "Runnable"
+                ],
                 "category": "Tools",
                 "description": "Wrapper around Serper.dev - Google Search API",
                 "inputParams": [
@@ -180,7 +201,9 @@
                         "label": "Connect Credential",
                         "name": "credential",
                         "type": "credential",
-                        "credentialNames": ["serperApi"],
+                        "credentialNames": [
+                            "serperApi"
+                        ],
                         "id": "serper_0-input-credential-credential"
                     }
                 ],
