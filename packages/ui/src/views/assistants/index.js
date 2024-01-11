@@ -93,9 +93,9 @@ const Assistants = () => {
                         <h1>OpenAI Assistants</h1>
                         <Box sx={{ flexGrow: 1 }} />
                         <Grid item>
-                            <Button variant='outlined' sx={{ mr: 2 }} onClick={loadExisting} startIcon={<IconFileImport />}>
+                            {/* <Button variant='outlined' sx={{ mr: 2 }} onClick={loadExisting} startIcon={<IconFileImport />}>
                                 Load
-                            </Button>
+                            </Button> */}
                             <StyledButton variant='contained' sx={{ color: 'white' }} onClick={addNew} startIcon={<IconPlus />}>
                                 Add
                             </StyledButton>
