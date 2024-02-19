@@ -98,13 +98,6 @@ class Airtable_DocumentLoaders implements INode {
                 type: 'json',
                 optional: true,
                 additionalParams: true
-            },
-            {
-                label: 'Text Field Content',
-                name: 'textField',
-                type: 'string',
-                optional: true,
-                description: 'The field to use as the pageContent, default will split the entire record JSON'
             }
         ]
     }
@@ -118,7 +111,6 @@ class Airtable_DocumentLoaders implements INode {
         const limit = nodeData.inputs?.limit as string
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
         const metadata = nodeData.inputs?.metadata
-        const textField = nodeData.inputs?.textField as string
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const accessToken = getCredentialParam('accessToken', credentialData, nodeData)
@@ -130,7 +122,6 @@ class Airtable_DocumentLoaders implements INode {
             fields,
             returnAll,
             accessToken,
-            textField,
             limit: limit ? parseInt(limit, 10) : 100
         }
 
@@ -220,7 +211,6 @@ class AirtableLoader extends BaseDocumentLoader {
         this.accessToken = accessToken
         this.limit = limit
         this.returnAll = returnAll
-        this.textField = textField
     }
 
     public async load(): Promise<Document[]> {
@@ -315,7 +305,6 @@ class AirtableLoader extends BaseDocumentLoader {
 
         let response: AirtableLoaderResponse
         let returnPages: AirtableLoaderPage[] = []
-        console.log('GOT HERE!!!', params)
         do {
             response = await this.fetchAirtableData(`https://api.airtable.com/v0/${this.baseId}/${this.tableId}/listRecords`, data)
             returnPages.push(...response.records)
