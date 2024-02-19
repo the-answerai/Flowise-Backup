@@ -10,7 +10,7 @@ import logger from './utils/logger'
 import { expressRequestLogger } from './utils/logger'
 import { v4 as uuidv4 } from 'uuid'
 import OpenAI from 'openai'
-import { Between, IsNull, FindOptionsWhere } from 'typeorm'
+import { FindOptionsWhere, MoreThanOrEqual, LessThanOrEqual } from 'typeorm'
 import {
     IChatFlow,
     IncomingInput,
@@ -20,13 +20,14 @@ import {
     ICredentialReturnResponse,
     chatType,
     IChatMessage,
-    IReactFlowEdge
+    IDepthQueue,
+    INodeDirectedGraph
 } from './Interface'
 import {
     getNodeModulesPackagePath,
     getStartingNodes,
     buildLangchain,
-    getEndingNode,
+    getEndingNodes,
     constructGraphs,
     resolveVariables,
     isStartNodeDependOnInput,
@@ -37,13 +38,16 @@ import {
     databaseEntities,
     transformToCredentialEntity,
     decryptCredentialData,
-    clearAllSessionMemory,
     replaceInputsWithConfig,
     getEncryptionKey,
-    checkMemorySessionId,
-    clearSessionMemoryFromViewMessageDialog,
+    getMemorySessionId,
     getUserHome,
-    replaceChatHistory
+    getSessionChatHistory,
+    getAllConnectedNodes,
+    clearSessionMemory,
+    findMemoryNode,
+    getTelemetryFlowObj,
+    getAppVersion
 } from './utils'
 import { cloneDeep, omit, uniqWith, isEqual } from 'lodash'
 import { getDataSource } from './DataSource'
@@ -55,19 +59,22 @@ import { Tool } from './database/entities/Tool'
 import { Assistant } from './database/entities/Assistant'
 import { ChatflowPool } from './ChatflowPool'
 import { CachePool } from './CachePool'
-import { ICommonObject, IMessage, INodeOptionsValue } from 'flowise-components'
+import { ICommonObject, IMessage, INodeOptionsValue, handleEscapeCharacters, webCrawl, xmlScrape } from 'flowise-components'
 import { createRateLimiter, getRateLimiter, initializeRateLimiter } from './utils/rateLimit'
 import { addAPIKey, compareKeys, deleteAPIKey, getApiKey, getAPIKeys, updateAPIKey } from './utils/apiKey'
-import { sanitizeMiddleware } from './utils/XSS'
+import { sanitizeMiddleware, getCorsOptions, getAllowedIframeOrigins } from './utils/XSS'
 import axios from 'axios'
 import { Client } from 'langchainhub'
 import { parsePrompt } from './utils/hub'
+import { Telemetry } from './utils/telemetry'
+import { Variable } from './database/entities/Variable'
 
 export class App {
     app: express.Application
     nodesPool: NodesPool
     chatflowPool: ChatflowPool
     cachePool: CachePool
+    telemetry: Telemetry
     AppDataSource = getDataSource()
 
     constructor() {
@@ -102,6 +109,9 @@ export class App {
 
                 // Initialize cache pool
                 this.cachePool = new CachePool()
+
+                // Initialize telemetry
+                this.telemetry = new Telemetry()
             })
             .catch((err) => {
                 logger.error('❌ [server]: Error during Data Source initialization:', err)
@@ -110,14 +120,27 @@ export class App {
 
     async config(socketIO?: Server) {
         // Limit is needed to allow sending/receiving base64 encoded string
-        this.app.use(express.json({ limit: '50mb' }))
-        this.app.use(express.urlencoded({ limit: '50mb', extended: true }))
+        const flowise_file_size_limit = process.env.FLOWISE_FILE_SIZE_LIMIT ?? '50mb'
+        this.app.use(express.json({ limit: flowise_file_size_limit }))
+        this.app.use(express.urlencoded({ limit: flowise_file_size_limit, extended: true }))
 
         if (process.env.NUMBER_OF_PROXIES && parseInt(process.env.NUMBER_OF_PROXIES) > 0)
             this.app.set('trust proxy', parseInt(process.env.NUMBER_OF_PROXIES))
 
-        // Allow access from *
-        this.app.use(cors())
+        // Allow access from specified domains
+        this.app.use(cors(getCorsOptions()))
+
+        // Allow embedding from specified domains.
+        this.app.use((req, res, next) => {
+            const allowedOrigins = getAllowedIframeOrigins()
+            if (allowedOrigins == '*') {
+                next()
+            } else {
+                const csp = `frame-ancestors ${allowedOrigins}`
+                res.setHeader('Content-Security-Policy', csp)
+                next()
+            }
+        })
 
         // Switch off the default 'X-Powered-By: Express' header
         this.app.disable('x-powered-by')
@@ -162,7 +185,7 @@ export class App {
         this.app.get('/api/v1/ip', (request, response) => {
             response.send({
                 ip: request.ip,
-                msg: 'See the returned IP address in the response. If it matches your current IP address ( which you can get by going to http://ip.nfriedly.com/ or https://api.ipify.org/ ), then the number of proxies is correct and the rate limiter should now work correctly. If not, increase the number of proxies by 1 until the IP address matches your own. Visit https://docs.flowiseai.com/deployment#rate-limit-setup-guide for more information.'
+                msg: 'Check returned IP address in the response. If it matches your current IP address ( which you can get by going to http://ip.nfriedly.com/ or https://api.ipify.org/ ), then the number of proxies is correct and the rate limiter should now work correctly. If not, increase the number of proxies by 1 and restart Cloud-Hosted Flowise until the IP address matches your own. Visit https://docs.flowiseai.com/configuration/rate-limit#cloud-hosted-rate-limit-setup-guide for more information.'
             })
         })
 
@@ -281,6 +304,35 @@ export class App {
             }
         })
 
+        // execute custom function node
+        this.app.post('/api/v1/node-custom-function', async (req: Request, res: Response) => {
+            const body = req.body
+            const nodeData = { inputs: body }
+            if (Object.prototype.hasOwnProperty.call(this.nodesPool.componentNodes, 'customFunction')) {
+                try {
+                    const nodeInstanceFilePath = this.nodesPool.componentNodes['customFunction'].filePath as string
+                    const nodeModule = await import(nodeInstanceFilePath)
+                    const newNodeInstance = new nodeModule.nodeClass()
+
+                    const options: ICommonObject = {
+                        appDataSource: this.AppDataSource,
+                        databaseEntities,
+                        logger
+                    }
+
+                    const returnData = await newNodeInstance.init(nodeData, '', options)
+                    const result = typeof returnData === 'string' ? handleEscapeCharacters(returnData, true) : returnData
+
+                    return res.json(result)
+                } catch (error) {
+                    return res.status(500).send(`Error running custom function: ${error}`)
+                }
+            } else {
+                res.status(404).send(`Node customFunction not found`)
+                return
+            }
+        })
+
         // ----------------------------------------
         // Chatflows
         // ----------------------------------------
@@ -335,7 +387,8 @@ export class App {
             const chatflow = await this.AppDataSource.getRepository(ChatFlow).findOneBy({
                 id: req.params.id
             })
-            if (chatflow && chatflow.chatbotConfig) {
+            if (!chatflow) return res.status(404).send(`Chatflow ${req.params.id} not found`)
+            if (chatflow.chatbotConfig) {
                 try {
                     const parsedConfig = JSON.parse(chatflow.chatbotConfig)
                     return res.json(parsedConfig)
@@ -343,7 +396,7 @@ export class App {
                     return res.status(500).send(`Error parsing Chatbot Config for Chatflow ${req.params.id}`)
                 }
             }
-            return res.status(404).send(`Chatbot Config for Chatflow ${req.params.id} not found`)
+            return res.status(200).send('OK')
         })
 
         // Save chatflow
@@ -354,6 +407,12 @@ export class App {
 
             const chatflow = this.AppDataSource.getRepository(ChatFlow).create(newChatFlow)
             const results = await this.AppDataSource.getRepository(ChatFlow).save(chatflow)
+
+            await this.telemetry.sendTelemetry('chatflow_created', {
+                version: await getAppVersion(),
+                chatlowId: results.id,
+                flowGraph: getTelemetryFlowObj(JSON.parse(results.flowData)?.nodes, JSON.parse(results.flowData)?.edges)
+            })
 
             return res.json(results)
         })
@@ -409,19 +468,36 @@ export class App {
             const edges = parsedFlowData.edges
             const { graph, nodeDependencies } = constructGraphs(nodes, edges)
 
-            const endingNodeId = getEndingNode(nodeDependencies, graph)
-            if (!endingNodeId) return res.status(500).send(`Ending node ${endingNodeId} not found`)
+            const endingNodeIds = getEndingNodes(nodeDependencies, graph)
+            if (!endingNodeIds.length) return res.status(500).send(`Ending nodes not found`)
 
-            const endingNodeData = nodes.find((nd) => nd.id === endingNodeId)?.data
-            if (!endingNodeData) return res.status(500).send(`Ending node ${endingNodeId} data not found`)
+            const endingNodes = nodes.filter((nd) => endingNodeIds.includes(nd.id))
 
-            if (endingNodeData && endingNodeData.category !== 'Chains' && endingNodeData.category !== 'Agents') {
-                return res.status(500).send(`Ending node must be either a Chain or Agent`)
+            let isStreaming = false
+            let isEndingNodeExists = endingNodes.find((node) => node.data?.outputs?.output === 'EndingNode')
+
+            for (const endingNode of endingNodes) {
+                const endingNodeData = endingNode.data
+                if (!endingNodeData) return res.status(500).send(`Ending node ${endingNode.id} data not found`)
+
+                const isEndingNode = endingNodeData?.outputs?.output === 'EndingNode'
+
+                if (!isEndingNode) {
+                    if (
+                        endingNodeData &&
+                        endingNodeData.category !== 'Chains' &&
+                        endingNodeData.category !== 'Agents' &&
+                        endingNodeData.category !== 'Engine'
+                    ) {
+                        return res.status(500).send(`Ending node must be either a Chain or Agent`)
+                    }
+                }
+
+                isStreaming = isEndingNode ? false : isFlowValidForStream(nodes, endingNodeData)
             }
 
-            const obj = {
-                isStreaming: isFlowValidForStream(nodes, endingNodeData)
-            }
+            // Once custom function ending node exists, flow is always unavailable to stream
+            const obj = { isStreaming: isEndingNodeExists ? false : isStreaming }
             return res.json(obj)
         })
 
@@ -435,6 +511,7 @@ export class App {
             const chatId = req.query?.chatId as string | undefined
             const memoryType = req.query?.memoryType as string | undefined
             const sessionId = req.query?.sessionId as string | undefined
+            const messageId = req.query?.messageId as string | undefined
             const startDate = req.query?.startDate as string | undefined
             const endDate = req.query?.endDate as string | undefined
             let chatTypeFilter = req.query?.chatType as chatType | undefined
@@ -462,7 +539,8 @@ export class App {
                 memoryType,
                 sessionId,
                 startDate,
-                endDate
+                endDate,
+                messageId
             )
             return res.json(chatmessages)
         })
@@ -490,7 +568,7 @@ export class App {
                 res.status(404).send(`Chatflow ${chatflowid} not found`)
                 return
             }
-            const chatId = (req.query?.chatId as string) ?? (await getChatId(chatflowid))
+            const chatId = req.query?.chatId as string
             const memoryType = req.query?.memoryType as string | undefined
             const sessionId = req.query?.sessionId as string | undefined
             const chatType = req.query?.chatType as string | undefined
@@ -500,20 +578,22 @@ export class App {
             const parsedFlowData: IReactFlowObject = JSON.parse(flowData)
             const nodes = parsedFlowData.nodes
 
-            if (isClearFromViewMessageDialog) {
-                await clearSessionMemoryFromViewMessageDialog(
+            try {
+                await clearSessionMemory(
                     nodes,
                     this.nodesPool.componentNodes,
                     chatId,
                     this.AppDataSource,
                     sessionId,
-                    memoryType
+                    memoryType,
+                    isClearFromViewMessageDialog
                 )
-            } else {
-                await clearAllSessionMemory(nodes, this.nodesPool.componentNodes, chatId, this.AppDataSource, sessionId)
+            } catch (e) {
+                return res.status(500).send('Error clearing chat messages')
             }
 
-            const deleteOptions: FindOptionsWhere<ChatMessage> = { chatflowid, chatId }
+            const deleteOptions: FindOptionsWhere<ChatMessage> = { chatflowid }
+            if (chatId) deleteOptions.chatId = chatId
             if (memoryType) deleteOptions.memoryType = memoryType
             if (sessionId) deleteOptions.sessionId = sessionId
             if (chatType) deleteOptions.chatType = chatType
@@ -601,7 +681,7 @@ export class App {
             return res.json(result)
         })
 
-        // Delete all chatmessages from chatflowid
+        // Delete all credentials from chatflowid
         this.app.delete('/api/v1/credentials/:id', async (req: Request, res: Response) => {
             const results = await this.AppDataSource.getRepository(Credential).delete({ id: req.params.id })
             return res.json(results)
@@ -633,6 +713,12 @@ export class App {
 
             const tool = this.AppDataSource.getRepository(Tool).create(newTool)
             const results = await this.AppDataSource.getRepository(Tool).save(tool)
+
+            await this.telemetry.sendTelemetry('tool_created', {
+                version: await getAppVersion(),
+                toolId: results.id,
+                toolName: results.name
+            })
 
             return res.json(results)
         })
@@ -839,6 +925,11 @@ export class App {
 
             const assistant = this.AppDataSource.getRepository(Assistant).create(newAssistant)
             const results = await this.AppDataSource.getRepository(Assistant).save(assistant)
+
+            await this.telemetry.sendTelemetry('assistant_created', {
+                version: await getAppVersion(),
+                assistantId: results.id
+            })
 
             return res.json(results)
         })
@@ -1054,6 +1145,25 @@ export class App {
         })
 
         // ----------------------------------------
+        // Scraper
+        // ----------------------------------------
+
+        this.app.get('/api/v1/fetch-links', async (req: Request, res: Response) => {
+            const url = decodeURIComponent(req.query.url as string)
+            const relativeLinksMethod = req.query.relativeLinksMethod as string
+            if (!relativeLinksMethod) {
+                return res.status(500).send('Please choose a Relative Links Method in Additional Parameters.')
+            }
+
+            const limit = parseInt(req.query.limit as string)
+            if (process.env.DEBUG === 'true') console.info(`Start ${relativeLinksMethod}`)
+            const links: string[] = relativeLinksMethod === 'webCrawl' ? await webCrawl(url, limit) : await xmlScrape(url, limit)
+            if (process.env.DEBUG === 'true') console.info(`Finish ${relativeLinksMethod}`)
+
+            res.json({ status: 'OK', links })
+        })
+
+        // ----------------------------------------
         // Upsert
         // ----------------------------------------
 
@@ -1062,12 +1172,12 @@ export class App {
             upload.array('files'),
             (req: Request, res: Response, next: NextFunction) => getRateLimiter(req, res, next),
             async (req: Request, res: Response) => {
-                await this.buildChatflow(req, res, undefined, false, true)
+                await this.upsertVector(req, res)
             }
         )
 
         this.app.post('/api/v1/vector/internal-upsert/:id', async (req: Request, res: Response) => {
-            await this.buildChatflow(req, res, undefined, true, true)
+            await this.upsertVector(req, res, true)
         })
 
         // ----------------------------------------
@@ -1122,21 +1232,42 @@ export class App {
         // Marketplaces
         // ----------------------------------------
 
-        // Get all chatflows for marketplaces
-        this.app.get('/api/v1/marketplaces/chatflows', async (req: Request, res: Response) => {
-            const marketplaceDir = path.join(__dirname, '..', 'marketplaces', 'chatflows')
-            const jsonsInDir = fs.readdirSync(marketplaceDir).filter((file) => path.extname(file) === '.json')
-            const templates: any[] = []
+        // Get all templates for marketplaces
+        this.app.get('/api/v1/marketplaces/templates', async (req: Request, res: Response) => {
+            let marketplaceDir = path.join(__dirname, '..', 'marketplaces', 'chatflows')
+            let jsonsInDir = fs.readdirSync(marketplaceDir).filter((file) => path.extname(file) === '.json')
+            let templates: any[] = []
             jsonsInDir.forEach((file, index) => {
                 const filePath = path.join(__dirname, '..', 'marketplaces', 'chatflows', file)
                 const fileData = fs.readFileSync(filePath)
                 const fileDataObj = JSON.parse(fileData.toString())
                 const template = {
                     id: index,
-                    name: file.split('.json')[0],
+                    templateName: file.split('.json')[0],
                     flowData: fileData.toString(),
                     badge: fileDataObj?.badge,
+                    framework: fileDataObj?.framework,
+                    categories: fileDataObj?.categories,
+                    type: 'Chatflow',
                     description: fileDataObj?.description || ''
+                }
+                templates.push(template)
+            })
+
+            marketplaceDir = path.join(__dirname, '..', 'marketplaces', 'tools')
+            jsonsInDir = fs.readdirSync(marketplaceDir).filter((file) => path.extname(file) === '.json')
+            jsonsInDir.forEach((file, index) => {
+                const filePath = path.join(__dirname, '..', 'marketplaces', 'tools', file)
+                const fileData = fs.readFileSync(filePath)
+                const fileDataObj = JSON.parse(fileData.toString())
+                const template = {
+                    ...fileDataObj,
+                    id: index,
+                    type: 'Tool',
+                    framework: fileDataObj?.framework,
+                    badge: fileDataObj?.badge,
+                    categories: '',
+                    templateName: file.split('.json')[0]
                 }
                 templates.push(template)
             })
@@ -1146,26 +1277,48 @@ export class App {
                 templates.splice(FlowiseDocsQnAIndex, 1)
                 templates.unshift(FlowiseDocsQnA)
             }
-            return res.json(templates)
+            return res.json(templates.sort((a, b) => a.templateName.localeCompare(b.templateName)))
         })
 
-        // Get all tools for marketplaces
-        this.app.get('/api/v1/marketplaces/tools', async (req: Request, res: Response) => {
-            const marketplaceDir = path.join(__dirname, '..', 'marketplaces', 'tools')
-            const jsonsInDir = fs.readdirSync(marketplaceDir).filter((file) => path.extname(file) === '.json')
-            const templates: any[] = []
-            jsonsInDir.forEach((file, index) => {
-                const filePath = path.join(__dirname, '..', 'marketplaces', 'tools', file)
-                const fileData = fs.readFileSync(filePath)
-                const fileDataObj = JSON.parse(fileData.toString())
-                const template = {
-                    ...fileDataObj,
-                    id: index,
-                    templateName: file.split('.json')[0]
-                }
-                templates.push(template)
+        // ----------------------------------------
+        // Variables
+        // ----------------------------------------
+        this.app.get('/api/v1/variables', async (req: Request, res: Response) => {
+            const variables = await getDataSource().getRepository(Variable).find()
+            return res.json(variables)
+        })
+
+        // Create new variable
+        this.app.post('/api/v1/variables', async (req: Request, res: Response) => {
+            const body = req.body
+            const newVariable = new Variable()
+            Object.assign(newVariable, body)
+            const variable = this.AppDataSource.getRepository(Variable).create(newVariable)
+            const results = await this.AppDataSource.getRepository(Variable).save(variable)
+            return res.json(results)
+        })
+
+        // Update variable
+        this.app.put('/api/v1/variables/:id', async (req: Request, res: Response) => {
+            const variable = await this.AppDataSource.getRepository(Variable).findOneBy({
+                id: req.params.id
             })
-            return res.json(templates)
+
+            if (!variable) return res.status(404).send(`Variable ${req.params.id} not found`)
+
+            const body = req.body
+            const updateVariable = new Variable()
+            Object.assign(updateVariable, body)
+            this.AppDataSource.getRepository(Variable).merge(variable, updateVariable)
+            const result = await this.AppDataSource.getRepository(Variable).save(variable)
+
+            return res.json(result)
+        })
+
+        // Delete variable via id
+        this.app.delete('/api/v1/variables/:id', async (req: Request, res: Response) => {
+            const results = await this.AppDataSource.getRepository(Variable).delete({ id: req.params.id })
+            return res.json(results)
         })
 
         // ----------------------------------------
@@ -1289,22 +1442,34 @@ export class App {
         memoryType?: string,
         sessionId?: string,
         startDate?: string,
-        endDate?: string
+        endDate?: string,
+        messageId?: string
     ): Promise<ChatMessage[]> {
+        const setDateToStartOrEndOfDay = (dateTimeStr: string, setHours: 'start' | 'end') => {
+            const date = new Date(dateTimeStr)
+            if (isNaN(date.getTime())) {
+                return undefined
+            }
+            setHours === 'start' ? date.setHours(0, 0, 0, 0) : date.setHours(23, 59, 59, 999)
+            return date
+        }
+
         let fromDate
-        if (startDate) fromDate = new Date(startDate)
+        if (startDate) fromDate = setDateToStartOrEndOfDay(startDate, 'start')
 
         let toDate
-        if (endDate) toDate = new Date(endDate)
+        if (endDate) toDate = setDateToStartOrEndOfDay(endDate, 'end')
 
         return await this.AppDataSource.getRepository(ChatMessage).find({
             where: {
                 chatflowid,
                 chatType,
                 chatId,
-                memoryType: memoryType ?? (chatId ? IsNull() : undefined),
-                sessionId: sessionId ?? (chatId ? IsNull() : undefined),
-                createdDate: toDate && fromDate ? Between(fromDate, toDate) : undefined
+                memoryType: memoryType ?? undefined,
+                sessionId: sessionId ?? undefined,
+                ...(fromDate && { createdDate: MoreThanOrEqual(fromDate) }),
+                ...(toDate && { createdDate: LessThanOrEqual(toDate) }),
+                id: messageId ?? undefined
             },
             order: {
                 createdDate: sortOrder === 'DESC' ? 'DESC' : 'ASC'
@@ -1324,24 +1489,123 @@ export class App {
         return await this.AppDataSource.getRepository(ChatMessage).save(chatmessage)
     }
 
-    /**
-     * Method that find memory label that is connected within chatflow
-     * In a chatflow, there should only be 1 memory node
-     * @param {IReactFlowNode[]} nodes
-     * @param {IReactFlowEdge[]} edges
-     * @returns {string | undefined}
-     */
-    findMemoryLabel(nodes: IReactFlowNode[], edges: IReactFlowEdge[]): IReactFlowNode | undefined {
-        const memoryNodes = nodes.filter((node) => node.data.category === 'Memory')
-        const memoryNodeIds = memoryNodes.map((mem) => mem.data.id)
+    async upsertVector(req: Request, res: Response, isInternal: boolean = false) {
+        try {
+            const chatflowid = req.params.id
+            let incomingInput: IncomingInput = req.body
 
-        for (const edge of edges) {
-            if (memoryNodeIds.includes(edge.source)) {
-                const memoryNode = nodes.find((node) => node.data.id === edge.source)
-                return memoryNode
+            const chatflow = await this.AppDataSource.getRepository(ChatFlow).findOneBy({
+                id: chatflowid
+            })
+            if (!chatflow) return res.status(404).send(`Chatflow ${chatflowid} not found`)
+
+            if (!isInternal) {
+                const isKeyValidated = await this.validateKey(req, chatflow)
+                if (!isKeyValidated) return res.status(401).send('Unauthorized')
             }
+
+            const files = (req.files as any[]) || []
+
+            if (files.length) {
+                const overrideConfig: ICommonObject = { ...req.body }
+                for (const file of files) {
+                    const fileData = fs.readFileSync(file.path, { encoding: 'base64' })
+                    const dataBase64String = `data:${file.mimetype};base64,${fileData},filename:${file.filename}`
+
+                    const fileInputField = mapMimeTypeToInputField(file.mimetype)
+                    if (overrideConfig[fileInputField]) {
+                        overrideConfig[fileInputField] = JSON.stringify([...JSON.parse(overrideConfig[fileInputField]), dataBase64String])
+                    } else {
+                        overrideConfig[fileInputField] = JSON.stringify([dataBase64String])
+                    }
+                }
+                incomingInput = {
+                    question: req.body.question ?? 'hello',
+                    overrideConfig,
+                    history: [],
+                    stopNodeId: req.body.stopNodeId
+                }
+            }
+
+            /*** Get chatflows and prepare data  ***/
+            const flowData = chatflow.flowData
+            const parsedFlowData: IReactFlowObject = JSON.parse(flowData)
+            const nodes = parsedFlowData.nodes
+            const edges = parsedFlowData.edges
+
+            let stopNodeId = incomingInput?.stopNodeId ?? ''
+            let chatHistory = incomingInput?.history
+            let chatId = incomingInput.chatId ?? ''
+            let isUpsert = true
+
+            // Get session ID
+            const memoryNode = findMemoryNode(nodes, edges)
+            let sessionId = undefined
+            if (memoryNode) sessionId = getMemorySessionId(memoryNode, incomingInput, chatId, isInternal)
+
+            const vsNodes = nodes.filter(
+                (node) =>
+                    node.data.category === 'Vector Stores' &&
+                    !node.data.label.includes('Upsert') &&
+                    !node.data.label.includes('Load Existing')
+            )
+            if (vsNodes.length > 1 && !stopNodeId) {
+                return res.status(500).send('There are multiple vector nodes, please provide stopNodeId in body request')
+            } else if (vsNodes.length === 1 && !stopNodeId) {
+                stopNodeId = vsNodes[0].data.id
+            } else if (!vsNodes.length && !stopNodeId) {
+                return res.status(500).send('No vector node found')
+            }
+
+            const { graph } = constructGraphs(nodes, edges, { isReversed: true })
+
+            const nodeIds = getAllConnectedNodes(graph, stopNodeId)
+
+            const filteredGraph: INodeDirectedGraph = {}
+            for (const key of nodeIds) {
+                if (Object.prototype.hasOwnProperty.call(graph, key)) {
+                    filteredGraph[key] = graph[key]
+                }
+            }
+
+            const { startingNodeIds, depthQueue } = getStartingNodes(filteredGraph, stopNodeId)
+
+            await buildLangchain(
+                startingNodeIds,
+                nodes,
+                edges,
+                filteredGraph,
+                depthQueue,
+                this.nodesPool.componentNodes,
+                incomingInput.question,
+                chatHistory,
+                chatId,
+                sessionId ?? '',
+                chatflowid,
+                this.AppDataSource,
+                incomingInput?.overrideConfig,
+                this.cachePool,
+                isUpsert,
+                stopNodeId
+            )
+
+            const startingNodes = nodes.filter((nd) => startingNodeIds.includes(nd.data.id))
+
+            this.chatflowPool.add(chatflowid, undefined, startingNodes, incomingInput?.overrideConfig)
+
+            await this.telemetry.sendTelemetry('vector_upserted', {
+                version: await getAppVersion(),
+                chatlowId: chatflowid,
+                type: isInternal ? chatType.INTERNAL : chatType.EXTERNAL,
+                flowGraph: getTelemetryFlowObj(nodes, edges),
+                stopNodeId
+            })
+
+            return res.status(201).send('Successfully Upserted')
+        } catch (e: any) {
+            logger.error('[server]: Error:', e)
+            return res.status(500).send(e.message)
         }
-        return undefined
     }
 
     /**
@@ -1352,7 +1616,7 @@ export class App {
      * @param {boolean} isInternal
      * @param {boolean} isUpsert
      */
-    async buildChatflow(req: Request, res: Response, socketIO?: Server, isInternal: boolean = false, isUpsert: boolean = false) {
+    async buildChatflow(req: Request, res: Response, socketIO?: Server, isInternal: boolean = false) {
         try {
             const chatflowid = req.params.id
             let incomingInput: IncomingInput = req.body
@@ -1393,8 +1657,7 @@ export class App {
                     question: req.body.question ?? 'hello',
                     overrideConfig,
                     history: [],
-                    socketIOClientId: req.body.socketIOClientId,
-                    stopNodeId: req.body.stopNodeId
+                    socketIOClientId: req.body.socketIOClientId
                 }
             }
 
@@ -1404,12 +1667,17 @@ export class App {
             const nodes = parsedFlowData.nodes
             const edges = parsedFlowData.edges
 
+            // Get session ID
+            const memoryNode = findMemoryNode(nodes, edges)
+            const memoryType = memoryNode?.data.label
+            let sessionId = undefined
+            if (memoryNode) sessionId = getMemorySessionId(memoryNode, incomingInput, chatId, isInternal)
+
             /*   Reuse the flow without having to rebuild (to avoid duplicated upsert, recomputation, reinitialization of memory) when all these conditions met:
              * - Node Data already exists in pool
              * - Still in sync (i.e the flow has not been modified since)
              * - Existing overrideConfig and new overrideConfig are the same
              * - Flow doesn't start with/contain nodes that depend on incomingInput.question
-             * - Its not an Upsert request
              * TODO: convert overrideConfig to hash when we no longer store base64 string but filepath
              ***/
             const isFlowReusable = () => {
@@ -1422,8 +1690,7 @@ export class App {
                         this.chatflowPool.activeChatflows[chatflowid].overrideConfig,
                         incomingInput.overrideConfig
                     ) &&
-                    !isStartNodeDependOnInput(this.chatflowPool.activeChatflows[chatflowid].startingNodes, nodes) &&
-                    !isUpsert
+                    !isStartNodeDependOnInput(this.chatflowPool.activeChatflows[chatflowid].startingNodes, nodes)
                 )
             }
 
@@ -1437,48 +1704,85 @@ export class App {
                 /*** Get Ending Node with Directed Graph  ***/
                 const { graph, nodeDependencies } = constructGraphs(nodes, edges)
                 const directedGraph = graph
-                const endingNodeId = getEndingNode(nodeDependencies, directedGraph)
-                if (!endingNodeId) return res.status(500).send(`Ending node ${endingNodeId} not found`)
+                const endingNodeIds = getEndingNodes(nodeDependencies, directedGraph)
+                if (!endingNodeIds.length) return res.status(500).send(`Ending nodes not found`)
 
-                const endingNodeData = nodes.find((nd) => nd.id === endingNodeId)?.data
-                if (!endingNodeData) return res.status(500).send(`Ending node ${endingNodeId} data not found`)
+                const endingNodes = nodes.filter((nd) => endingNodeIds.includes(nd.id))
 
-                if (endingNodeData && endingNodeData.category !== 'Chains' && endingNodeData.category !== 'Agents' && !isUpsert) {
-                    return res.status(500).send(`Ending node must be either a Chain or Agent`)
+                let isEndingNodeExists = endingNodes.find((node) => node.data?.outputs?.output === 'EndingNode')
+
+                for (const endingNode of endingNodes) {
+                    const endingNodeData = endingNode.data
+                    if (!endingNodeData) return res.status(500).send(`Ending node ${endingNode.id} data not found`)
+
+                    const isEndingNode = endingNodeData?.outputs?.output === 'EndingNode'
+
+                    if (!isEndingNode) {
+                        if (
+                            endingNodeData &&
+                            endingNodeData.category !== 'Chains' &&
+                            endingNodeData.category !== 'Agents' &&
+                            endingNodeData.category !== 'Engine'
+                        ) {
+                            return res.status(500).send(`Ending node must be either a Chain or Agent`)
+                        }
+
+                        if (
+                            endingNodeData.outputs &&
+                            Object.keys(endingNodeData.outputs).length &&
+                            !Object.values(endingNodeData.outputs ?? {}).includes(endingNodeData.name)
+                        ) {
+                            return res
+                                .status(500)
+                                .send(
+                                    `Output of ${endingNodeData.label} (${endingNodeData.id}) must be ${endingNodeData.label}, can't be an Output Prediction`
+                                )
+                        }
+                    }
+
+                    isStreamValid = isFlowValidForStream(nodes, endingNodeData)
                 }
 
-                if (
-                    endingNodeData.outputs &&
-                    Object.keys(endingNodeData.outputs).length &&
-                    !Object.values(endingNodeData.outputs).includes(endingNodeData.name) &&
-                    !isUpsert
-                ) {
-                    return res
-                        .status(500)
-                        .send(
-                            `Output of ${endingNodeData.label} (${endingNodeData.id}) must be ${endingNodeData.label}, can't be an Output Prediction`
-                        )
-                }
+                // Once custom function ending node exists, flow is always unavailable to stream
+                isStreamValid = isEndingNodeExists ? false : isStreamValid
 
-                isStreamValid = isFlowValidForStream(nodes, endingNodeData)
+                let chatHistory: IMessage[] = incomingInput.history ?? []
 
-                let chatHistory: IMessage[] | string = incomingInput.history
-                if (
-                    endingNodeData.inputs?.memory &&
-                    !incomingInput.history &&
-                    (incomingInput.chatId || incomingInput.overrideConfig?.sessionId)
-                ) {
+                // When {{chat_history}} is used in Prompt Template, fetch the chat conversations from memory node
+                for (const endingNode of endingNodes) {
+                    const endingNodeData = endingNode.data
+
+                    if (!endingNodeData.inputs?.memory) continue
+
                     const memoryNodeId = endingNodeData.inputs?.memory.split('.')[0].replace('{{', '')
                     const memoryNode = nodes.find((node) => node.data.id === memoryNodeId)
-                    if (memoryNode) {
-                        chatHistory = await replaceChatHistory(memoryNode, incomingInput, this.AppDataSource, databaseEntities, logger)
+
+                    if (!memoryNode) continue
+
+                    if (!chatHistory.length && (incomingInput.chatId || incomingInput.overrideConfig?.sessionId)) {
+                        chatHistory = await getSessionChatHistory(
+                            memoryNode,
+                            this.nodesPool.componentNodes,
+                            incomingInput,
+                            this.AppDataSource,
+                            databaseEntities,
+                            logger
+                        )
                     }
                 }
 
-                /*** Get Starting Nodes with Non-Directed Graph ***/
-                const constructedObj = constructGraphs(nodes, edges, true)
+                /*** Get Starting Nodes with Reversed Graph ***/
+                const constructedObj = constructGraphs(nodes, edges, { isReversed: true })
                 const nonDirectedGraph = constructedObj.graph
-                const { startingNodeIds, depthQueue } = getStartingNodes(nonDirectedGraph, endingNodeId)
+                let startingNodeIds: string[] = []
+                let depthQueue: IDepthQueue = {}
+                for (const endingNodeId of endingNodeIds) {
+                    const res = getStartingNodes(nonDirectedGraph, endingNodeId)
+                    startingNodeIds.push(...res.startingNodeIds)
+                    depthQueue = Object.assign(depthQueue, res.depthQueue)
+                }
+                startingNodeIds = [...new Set(startingNodeIds)]
+
                 const startingNodes = nodes.filter((nd) => startingNodeIds.includes(nd.id))
 
                 logger.debug(`[server]: Start building chatflow ${chatflowid}`)
@@ -1486,26 +1790,25 @@ export class App {
                 const reactFlowNodes = await buildLangchain(
                     startingNodeIds,
                     nodes,
+                    edges,
                     graph,
                     depthQueue,
                     this.nodesPool.componentNodes,
                     incomingInput.question,
                     chatHistory,
                     chatId,
+                    sessionId ?? '',
                     chatflowid,
                     this.AppDataSource,
                     incomingInput?.overrideConfig,
-                    this.cachePool,
-                    isUpsert,
-                    incomingInput.stopNodeId
+                    this.cachePool
                 )
-                if (isUpsert) {
-                    this.chatflowPool.add(chatflowid, undefined, startingNodes, incomingInput?.overrideConfig)
-                    return res.status(201).send('Successfully Upserted')
-                }
 
-                const nodeToExecute = reactFlowNodes.find((node: IReactFlowNode) => node.id === endingNodeId)
-                if (!nodeToExecute) return res.status(404).send(`Node ${endingNodeId} not found`)
+                const nodeToExecute =
+                    endingNodeIds.length === 1
+                        ? reactFlowNodes.find((node: IReactFlowNode) => endingNodeIds[0] === node.id)
+                        : reactFlowNodes[reactFlowNodes.length - 1]
+                if (!nodeToExecute) return res.status(404).send(`Node not found`)
 
                 if (incomingInput.overrideConfig) {
                     nodeToExecute.data = replaceInputsWithConfig(nodeToExecute.data, incomingInput.overrideConfig)
@@ -1522,43 +1825,32 @@ export class App {
                 this.chatflowPool.add(chatflowid, nodeToExecuteData, startingNodes, incomingInput?.overrideConfig)
             }
 
-            const nodeInstanceFilePath = this.nodesPool.componentNodes[nodeToExecuteData.name].filePath as string
-            const nodeModule = await import(nodeInstanceFilePath)
-            const nodeInstance = new nodeModule.nodeClass()
-
             logger.debug(`[server]: Running ${nodeToExecuteData.label} (${nodeToExecuteData.id})`)
 
-            let sessionId = undefined
-            if (nodeToExecuteData.instance) sessionId = checkMemorySessionId(nodeToExecuteData.instance, chatId)
-
-            const memoryNode = this.findMemoryLabel(nodes, edges)
-            const memoryType = memoryNode?.data.label
-
-            let chatHistory: IMessage[] | string = incomingInput.history
-            if (memoryNode && !incomingInput.history && (incomingInput.chatId || incomingInput.overrideConfig?.sessionId)) {
-                chatHistory = await replaceChatHistory(memoryNode, incomingInput, this.AppDataSource, databaseEntities, logger)
-            }
+            const nodeInstanceFilePath = this.nodesPool.componentNodes[nodeToExecuteData.name].filePath as string
+            const nodeModule = await import(nodeInstanceFilePath)
+            const nodeInstance = new nodeModule.nodeClass({ sessionId })
 
             let result = isStreamValid
                 ? await nodeInstance.run(nodeToExecuteData, incomingInput.question, {
+                      chatId,
                       chatflowid,
-                      chatHistory,
-                      socketIO,
-                      socketIOClientId: incomingInput.socketIOClientId,
+                      chatHistory: incomingInput.history,
                       logger,
                       appDataSource: this.AppDataSource,
                       databaseEntities,
                       analytic: chatflow.analytic,
-                      chatId
+                      socketIO,
+                      socketIOClientId: incomingInput.socketIOClientId
                   })
                 : await nodeInstance.run(nodeToExecuteData, incomingInput.question, {
+                      chatId,
                       chatflowid,
-                      chatHistory,
+                      chatHistory: incomingInput.history,
                       logger,
                       appDataSource: this.AppDataSource,
                       databaseEntities,
-                      analytic: chatflow.analytic,
-                      chatId
+                      analytic: chatflow.analytic
                   })
 
             result = typeof result === 'string' ? { text: result } : result
@@ -1597,12 +1889,22 @@ export class App {
             if (result?.sourceDocuments) apiMessage.sourceDocuments = JSON.stringify(result.sourceDocuments)
             if (result?.usedTools) apiMessage.usedTools = JSON.stringify(result.usedTools)
             if (result?.fileAnnotations) apiMessage.fileAnnotations = JSON.stringify(result.fileAnnotations)
-            await this.addChatMessage(apiMessage)
+            const chatMessage = await this.addChatMessage(apiMessage)
+            result.chatMessageId = chatMessage.id
 
             logger.debug(`[server]: Finished running ${nodeToExecuteData.label} (${nodeToExecuteData.id})`)
+            await this.telemetry.sendTelemetry('prediction_sent', {
+                version: await getAppVersion(),
+                chatlowId: chatflowid,
+                chatId,
+                type: isInternal ? chatType.INTERNAL : chatType.EXTERNAL,
+                flowGraph: getTelemetryFlowObj(nodes, edges)
+            })
 
-            // Only return ChatId when its Internal OR incoming input has ChatId, to avoid confusion when calling API
-            if (incomingInput.chatId || isInternal) result.chatId = chatId
+            // Prepare response
+            result.chatId = chatId
+            if (sessionId) result.sessionId = sessionId
+            if (memoryType) result.memoryType = memoryType
 
             return res.json(result)
         } catch (e: any) {
@@ -1614,28 +1916,12 @@ export class App {
     async stopApp() {
         try {
             const removePromises: any[] = []
+            removePromises.push(this.telemetry.flush())
             await Promise.all(removePromises)
         } catch (e) {
             logger.error(`❌[server]: Flowise Server shut down error: ${e}`)
         }
     }
-}
-
-/**
- * Get first chat message id
- * @param {string} chatflowid
- * @returns {string}
- */
-export async function getChatId(chatflowid: string): Promise<string> {
-    // first chatmessage id as the unique chat id
-    const firstChatMessage = await getDataSource()
-        .getRepository(ChatMessage)
-        .createQueryBuilder('cm')
-        .select('cm.id')
-        .where('chatflowid = :chatflowid', { chatflowid })
-        .orderBy('cm.createdDate', 'ASC')
-        .getOne()
-    return firstChatMessage ? firstChatMessage.id : ''
 }
 
 let serverApp: App | undefined
@@ -1651,9 +1937,7 @@ export async function start(): Promise<void> {
     const server = http.createServer(serverApp.app)
 
     const io = new Server(server, {
-        cors: {
-            origin: '*'
-        }
+        cors: getCorsOptions()
     })
 
     await serverApp.initDatabase()
