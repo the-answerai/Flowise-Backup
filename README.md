@@ -202,3 +202,12 @@ See [contributing guide](CONTRIBUTING.md). Reach out to us at [Discord](https://
 ## 📄 License
 
 Source code in this repository is made available under the [Apache License Version 2.0](LICENSE.md).
+
+## AnswerAI Specific Deployment to AWS
+- There is an issue with docker-compose using the wrong version of docker. You need to run this after installing docker-compose. Then continue with the rest of the steps in the docs
+```bash
+pip install docker==6
+```
+- There is an issue with deploying our forked version. We had to change the Docker files which got checked in
+
+
