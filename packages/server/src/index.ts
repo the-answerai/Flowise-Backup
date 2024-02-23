@@ -61,7 +61,7 @@ import { ChatflowPool } from './ChatflowPool'
 import { CachePool } from './CachePool'
 import { ICommonObject, IMessage, INodeOptionsValue, handleEscapeCharacters, webCrawl, xmlScrape } from 'flowise-components'
 import { createRateLimiter, getRateLimiter, initializeRateLimiter } from './utils/rateLimit'
-import { addAPIKey, compareKeys, deleteAPIKey, getApiKey, getAPIKeys, updateAPIKey } from './utils/apiKey'
+import { addAPIKey, compareKeys, deleteAPIKey, findAPIKey, getApiKey, getAPIKeys, updateAPIKey } from './utils/apiKey'
 import { sanitizeMiddleware, getCorsOptions, getAllowedIframeOrigins } from './utils/XSS'
 import axios from 'axios'
 import { Client } from 'langchainhub'
@@ -425,7 +425,11 @@ export class App {
                         Authorization: 'Bearer ' + process.env.ANSWERAI_API_KEY
                     },
                     body: JSON.stringify({
-                        chatflow: results
+                        chatflow: {
+                            ...results
+                        },
+                        chatflowDomain: `${process.env.DOMAIN}`,
+                        chatflowApiKey: lastKey.apiKey
                     })
                 })
             } catch (error) {
@@ -475,7 +479,9 @@ export class App {
                         Authorization: 'Bearer ' + process.env.ANSWERAI_API_KEY
                     },
                     body: JSON.stringify({
-                        chatflow: result
+                        chatflow: result,
+                        chatflowDomain: `${process.env.DOMAIN}`,
+                        chatflowApiKey: chatflow.apikeyid ? (await findAPIKey(chatflow.apikeyid))?.apiKey : ''
                     })
                 })
             } catch (error) {
