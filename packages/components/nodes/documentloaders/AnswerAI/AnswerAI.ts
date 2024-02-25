@@ -2,11 +2,9 @@ import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Inter
 import { TextSplitter } from 'langchain/text_splitter'
 import { BaseDocumentLoader } from 'langchain/document_loaders/base'
 import { Document } from 'langchain/document'
-import * as contentful from 'contentful'
-import { documentToPlainTextString } from '@contentful/rich-text-plain-text-renderer'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
 
-class Contentful_DocumentLoaders implements INode {
+class AnswerAI_DocumentLoaders implements INode {
     label: string
     name: string
     version: number
@@ -19,19 +17,19 @@ class Contentful_DocumentLoaders implements INode {
     inputs?: INodeParams[]
 
     constructor() {
-        this.label = 'Contentful'
-        this.name = 'contentful'
+        this.label = 'AnswerAI Document Loader'
+        this.name = 'answeraiDocumentLoader'
         this.version = 1.0
         this.type = 'Document'
-        this.icon = 'contentful.png'
+        this.icon = 'answerai.png'
         this.category = 'Document Loaders'
-        this.description = `Load data from a Contentful Space`
+        this.description = `Load data you have saved in your AnswerAI knowledge base.`
         this.baseClasses = [this.type]
         this.credential = {
             label: 'Connect Credential',
             name: 'credential',
             type: 'credential',
-            credentialNames: ['contetnfulDeliveryApi']
+            credentialNames: ['answerAiApi']
         }
         this.inputs = [
             {
@@ -41,82 +39,31 @@ class Contentful_DocumentLoaders implements INode {
                 optional: true
             },
             {
-                label: ' Content Type',
-                name: 'contentType',
+                label: 'Type of Data',
+                name: 'docType',
                 type: 'string',
-                placeholder: 'pageBlog',
-                default: 'pageBlog',
+                placeholder: 'doctype',
+                default: 'Text',
                 description: 'The content type to query'
-            },
-            {
-                label: 'Environment Id',
-                name: 'environmentId',
-                type: 'string',
-                placeholder: 'master',
-                default: 'master',
-                additionalParams: true,
-                description:
-                    'If your table URL looks like: https://app.contentful.com/spaces/abjv67t9l34s/environments/master-starter-v2/views/entries, master-starter-v2 is the environment id'
-            },
-            {
-                label: 'Include Levels',
-                name: 'include',
-                type: 'number',
-                optional: true,
-                additionalParams: true,
-                description: 'The number of levels to include in the response'
-            },
-            {
-                label: 'Include All',
-                name: 'includeAll',
-                type: 'boolean',
-                optional: true,
-                additionalParams: true,
-                description: 'Include all entries in the response'
-            },
-            {
-                label: 'Limit',
-                name: 'limit',
-                type: 'number',
-                optional: true,
-                additionalParams: true,
-                description: 'The limit of items to return default is 50'
-            },
-            {
-                label: 'Search Query',
-                name: 'metadata',
-                type: 'json',
-                optional: true,
-                additionalParams: true
             }
         ]
     }
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
 
-        const environmentId = nodeData.inputs?.environmentId as string
+        const docType = nodeData.inputs?.docType as string
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
-        const metadata = nodeData.inputs?.metadata
-        const include = nodeData.inputs?.include as number
-        const limit = nodeData.inputs?.limit as number
-        const contentType = nodeData.inputs?.contentType as string
-        const includeAll = nodeData.inputs?.includeAll as boolean
 
-        const accessToken = getCredentialParam('accessToken', credentialData, nodeData)
-        const spaceId = getCredentialParam('spaceId', credentialData, nodeData)
+        const accessToken = getCredentialParam('apiKey', credentialData, nodeData)
 
-        const contentfulOptions: ContentfulLoaderParams = {
-            spaceId,
-            environmentId,
-            accessToken,
-            include,
-            includeAll,
-            limit,
-            metadata,
-            contentType
+        const documentOptions: Document = {
+            pageContent: '',
+            metadata: {
+                contentType: docType
+            }
         }
 
-        const loader = new ContentfulLoader(contentfulOptions)
+        const loader = new ContentfulLoader(documentOptions)
 
         let docs = []
 
@@ -146,27 +93,21 @@ class Contentful_DocumentLoaders implements INode {
     }
 }
 
-interface ContentfulLoaderParams {
-    spaceId: string
-    environmentId: string
-    accessToken: string
-    include?: number
-    limit?: number
-    contentType: string
-    includeAll?: boolean
-    metadata?: any
+interface AnswerAILoaderParams {
+    docType: string
+    metadata: string
 }
 
-interface ContentfulLoaderResponse {
-    items: ContentfulEntry[]
+interface AnswerAILoaderResponse {
+    items: AnswerAIDocument[]
     skip?: number
     limit?: number
     total?: number
 }
 
-interface ContentfulEntry {
-    sys: ICommonObject
-    fields: ICommonObject
+interface AnswerAIDocument {
+    content: string
+    metadata: ICommonObject
 }
 
 interface IField {
@@ -179,33 +120,14 @@ interface IContentObject {
 }
 
 class ContentfulLoader extends BaseDocumentLoader {
-    public readonly spaceId: string
-
-    public readonly environmentId: string
-
-    public readonly accessToken: string
-
-    public readonly textField?: string
-
-    public readonly include?: number
-
-    public readonly limit?: number
-
-    public readonly contentType?: string
-
-    public readonly includeAll?: boolean
+    public readonly docType: string
 
     public readonly metadata?: ICommonObject
 
-    constructor({ spaceId, environmentId, accessToken, metadata = {}, include, limit, contentType, includeAll }: ContentfulLoaderParams) {
+    constructor({ docType, metadata }: AnswerAILoaderParams) {
         super()
-        this.spaceId = spaceId
-        this.environmentId = environmentId
-        this.accessToken = accessToken
-        this.contentType = contentType
-        this.includeAll = includeAll
-        this.include = include
-        this.limit = limit
+        this.docType = docType
+        this.metadata = {}
 
         // Check if metadata is a non-empty string, then try to parse it.
         // If parsing fails or if metadata is not a string, use the default empty object.
@@ -302,5 +224,5 @@ class ContentfulLoader extends BaseDocumentLoader {
 }
 
 module.exports = {
-    nodeClass: Contentful_DocumentLoaders
+    nodeClass: AnswerAI_DocumentLoaders
 }

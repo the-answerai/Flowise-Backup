@@ -8,13 +8,14 @@ class AnswerAIApi implements INodeCredential {
     inputs: INodeParams[]
 
     constructor() {
-        this.label = 'Answer AI API'
-        this.name = 'answerAiApi'
+        this.label = 'Jira API'
+        this.name = 'JiraApi'
         this.version = 1.0
-        this.description = 'Please choose the API key you want to use from the list of available keys'
+        this.description =
+            'You can get a Jira APIKey from <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">here</a>'
         this.inputs = [
             {
-                label: 'Answer AI API Key',
+                label: 'Jira API Key',
                 name: 'apiKey',
                 type: 'password',
                 loadMethod: 'listApiKeys'
