@@ -44,4 +44,4 @@
 ## compressed
 **/*.tgz
 
-daisy
+/daisy
