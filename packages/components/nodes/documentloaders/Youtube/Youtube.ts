@@ -2,6 +2,7 @@ import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Inter
 import { TextSplitter } from 'langchain/text_splitter'
 import { BaseDocumentLoader } from 'langchain/document_loaders/base'
 import { Document } from 'langchain/document'
+const { YoutubeTranscript } = require('youtube-transcript')
 
 class Youtube_DocumentLoaders implements INode {
     label: string
@@ -24,67 +25,76 @@ class Youtube_DocumentLoaders implements INode {
         this.category = 'Document Loaders'
         this.description = `Memorize, summarize, and chat with Youtube transcripts`
         this.baseClasses = [this.type]
-        this.credential = {
-            label: 'Connect Credential',
-            name: 'credential',
-            type: 'credential',
-            credentialNames: ['contetnfulDeliveryApi'] // This should be changed to the correct credential name
-        }
+        // this.credential = {
+        //     label: 'Connect Credential',
+        //     name: 'credential',
+        //     type: 'credential',
+        //     credentialNames: ['YoutubeApi'] // This should be changed to the correct credential name
+        // }
         this.inputs = [
             {
                 label: 'Text Splitter',
                 name: 'textSplitter',
                 type: 'TextSplitter',
                 optional: true
+            },
+            {
+                label: 'Youtube Video ID',
+                name: 'videoId',
+                type: 'string'
             }
         ]
     }
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
-        let docs: any[] = []
+        const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
+
+        const videoId = nodeData.inputs?.videoId as string
+
+        const loader = new YoutubeLoader({ videoId })
+
+        let docs = []
+
+        if (textSplitter) {
+            docs = await loader.loadAndSplit(textSplitter)
+        } else {
+            docs = await loader.load()
+        }
 
         return docs
     }
 }
 
-interface IField {
-    [key: string]: any
+interface YoutubeLoaderParams {
+    videoId: string
 }
 
-interface IContentObject {
-    fields: IField
-    sys: any // Adjust this type according to your sys object structure
-}
-
-class DasiyLoader extends BaseDocumentLoader {
+class YoutubeLoader extends BaseDocumentLoader {
+    public readonly videoId: string
     public readonly metadata?: ICommonObject
 
-    constructor() {
+    constructor({ videoId }: YoutubeLoaderParams) {
         super()
-        // Get metadata from the nodeData
-
-        // Check if metadata is a non-empty string, then try to parse it.
-        // If parsing fails or if metadata is not a string, use the default empty object.
-        // if (typeof metadata === 'string' && metadata.trim() !== '') {
-        //     try {
-        //         this.metadata = JSON.parse(metadata)
-        //     } catch (error) {
-        //         console.warn('Failed to parse metadata:', error)
-        //         this.metadata = {}
-        //     }
-        // } else if (typeof metadata === 'object') {
-        //     this.metadata = metadata
-        // } else {
-        //     this.metadata = {}
-        // }
+        this.videoId = videoId
     }
 
     public async load(): Promise<Document[]> {
-        return this.runQuery()
+        return this.fetchTranscript()
     }
 
-    private async runQuery(): Promise<Document[]> {
-        let returnPages: any[] = []
-        return returnPages
+    private async fetchTranscript() {
+        const youtubeUrl = `https://www.youtube.com/watch?v=${this.videoId}`
+        const transcript = await YoutubeTranscript.fetchTranscript(youtubeUrl)
+        const concatenatedText = transcript.map((entry: any) => entry.text).join(' ')
+
+        return [
+            new Document({
+                pageContent: concatenatedText,
+                metadata: {
+                    source: youtubeUrl,
+                    doctype: 'youtube'
+                }
+            })
+        ]
     }
 }
 
