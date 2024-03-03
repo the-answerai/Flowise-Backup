@@ -28,6 +28,7 @@ services:
             - LOG_PATH=${LOG_PATH}
             - DISABLE_FLOWISE_TELEMETRY=${DISABLE_FLOWISE_TELEMETRY}
             - ANSWERAI_DOMAIN=${ANSWERAI_DOMAIN}
+            - ANSWERAI_API_KEY=${ANSWERAI_API_KEY}
         ports:
             - '${PORT}:${PORT}'
         volumes:
