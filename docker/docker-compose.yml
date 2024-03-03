@@ -27,6 +27,7 @@ services:
             - LOG_LEVEL=${LOG_LEVEL}
             - LOG_PATH=${LOG_PATH}
             - DISABLE_FLOWISE_TELEMETRY=${DISABLE_FLOWISE_TELEMETRY}
+            - ANSWERAI_DOMAIN=${ANSWERAI_DOMAIN}
         ports:
             - '${PORT}:${PORT}'
         volumes:
