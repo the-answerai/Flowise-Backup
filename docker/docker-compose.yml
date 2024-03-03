@@ -29,6 +29,7 @@ services:
             - DISABLE_FLOWISE_TELEMETRY=${DISABLE_FLOWISE_TELEMETRY}
             - ANSWERAI_DOMAIN=${ANSWERAI_DOMAIN}
             - ANSWERAI_API_KEY=${ANSWERAI_API_KEY}
+            - DOMAIN=${DOMAIN}
         ports:
             - '${PORT}:${PORT}'
         volumes:
