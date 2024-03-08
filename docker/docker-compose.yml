@@ -34,4 +34,6 @@ services:
             - '${PORT}:${PORT}'
         volumes:
             - ~/.flowise:/root/.flowise
+        env_file:
+            - .env
         #command: /bin/sh -c "sleep 3; yarn start"

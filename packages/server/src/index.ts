@@ -68,6 +68,7 @@ import { Client } from 'langchainhub'
 import { parsePrompt } from './utils/hub'
 import { Telemetry } from './utils/telemetry'
 import { Variable } from './database/entities/Variable'
+import { auth } from 'express-oauth2-jwt-bearer'
 
 export class App {
     app: express.Application
@@ -150,32 +151,69 @@ export class App {
 
         // Add the sanitizeMiddleware to guard against XSS
         this.app.use(sanitizeMiddleware)
-
+        const whitelistURLs = [
+            '/api/v1/verify/apikey/',
+            '/api/v1/chatflows/apikey/',
+            '/api/v1/public-chatflows',
+            '/api/v1/public-chatbotConfig',
+            // '/api/v1/prediction/',
+            '/api/v1/vector/upsert/',
+            '/api/v1/node-icon/',
+            '/api/v1/components-credentials-icon/',
+            '/api/v1/chatflows-streaming',
+            '/api/v1/openai-assistants-file',
+            '/api/v1/ip'
+        ]
         if (process.env.FLOWISE_USERNAME && process.env.FLOWISE_PASSWORD) {
             const username = process.env.FLOWISE_USERNAME
             const password = process.env.FLOWISE_PASSWORD
             const basicAuthMiddleware = basicAuth({
                 users: { [username]: password }
             })
-            const whitelistURLs = [
-                '/api/v1/verify/apikey/',
-                '/api/v1/chatflows/apikey/',
-                '/api/v1/public-chatflows',
-                '/api/v1/public-chatbotConfig',
-                '/api/v1/prediction/',
-                '/api/v1/vector/upsert/',
-                '/api/v1/node-icon/',
-                '/api/v1/components-credentials-icon/',
-                '/api/v1/chatflows-streaming',
-                '/api/v1/openai-assistants-file',
-                '/api/v1/ip'
-            ]
+
             this.app.use((req, res, next) => {
                 if (req.url.includes('/api/v1/')) {
                     whitelistURLs.some((url) => req.url.includes(url)) ? next() : basicAuthMiddleware(req, res, next)
                 } else next()
             })
         }
+        // ----------------------------------------
+        // Configure Auth0
+        // ----------------------------------------
+
+        const jwtCheck = auth({
+            secret: process.env.AUTH0_SECRET,
+            audience: process.env.AUTH0_AUDIENCE,
+            issuerBaseURL: process.env.AUTH0_ISSUER_BASE_URL,
+            tokenSigningAlg: process.env.AUTH0_TOKEN_SIGN_ALG
+        })
+
+        // enforce on all endpoints
+
+        this.app.use((req, res, next) => {
+            if (req.url.includes('/api/v1/')) {
+                whitelistURLs.some((url) => req.url.includes(url)) ? next() : jwtCheck(req, res, next)
+            } else next()
+        })
+
+        this.app.use((req, res, next) => {
+            if (req.url.includes('/api/v1/')) {
+                if (!whitelistURLs.some((url) => req.url.includes(url))) {
+                    const isInvalidOrg =
+                        !!process.env.AUTH0_ORGANIZATION_ID && process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
+                    console.log('Auth', req.url, req?.auth?.payload?.org_id)
+                    if (isInvalidOrg) {
+                        res.status(401).send('Unauthorized')
+                    } else {
+                        next()
+                    }
+                } else {
+                    next()
+                }
+            } else {
+                next()
+            }
+        })
 
         const upload = multer({ dest: `${path.join(__dirname, '..', 'uploads')}/` })
 
@@ -407,31 +445,24 @@ export class App {
             const newChatFlow = new ChatFlow()
             Object.assign(newChatFlow, body)
             const chatflow = this.AppDataSource.getRepository(ChatFlow).create(newChatFlow)
-            const chatflowResult = await this.AppDataSource.getRepository(ChatFlow).save(chatflow)
-
-            // Create the chatflow key
-            const keys = await addAPIKey(`Chatflow ${chatflowResult.name} - ${chatflowResult.id}`)
-            const lastKey = keys[keys.length - 1]
-            chatflow.apikeyid = lastKey.id
             const results = await this.AppDataSource.getRepository(ChatFlow).save(chatflow)
-            // Update chatflow with key
-            // Save this Chatflow as a Sidekick in AnswerAI
-            // Include the API Key
+
             try {
                 await fetch(process.env.ANSWERAI_DOMAIN + '/api/sidekicks/new', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        Authorization: 'Bearer ' + process.env.ANSWERAI_API_KEY
+                        Authorization: 'Bearer ' + req.auth?.token!,
+                        cookie: req.headers.cookie!
                     },
                     body: JSON.stringify({
                         chatflow: {
                             ...results
                         },
-                        chatflowDomain: `${process.env.DOMAIN}`,
-                        chatflowApiKey: lastKey.apiKey
+                        chatflowDomain: `${process.env.DOMAIN}`
                     })
                 })
+                console.log('Chatflow saved to AnswerAI')
             } catch (error) {
                 console.log('Syncing to Sidekick failed', error)
             }
@@ -472,18 +503,20 @@ export class App {
                 this.chatflowPool.updateInSync(chatflow.id, false)
             }
             try {
-                await fetch(process.env.ANSWERAI_DOMAIN + '/api/sidekicks/new', {
+                console.log('Sync', req.auth)
+                const answersResponse = await fetch(process.env.ANSWERAI_DOMAIN + '/api/sidekicks/new', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        Authorization: 'Bearer ' + process.env.ANSWERAI_API_KEY
+                        Authorization: 'Bearer ' + req.auth?.token!
                     },
                     body: JSON.stringify({
                         chatflow: result,
-                        chatflowDomain: `${process.env.DOMAIN}`,
-                        chatflowApiKey: chatflow.apikeyid ? (await findAPIKey(chatflow.apikeyid))?.apiKey : ''
+                        chatflowDomain: `${process.env.DOMAIN}`
                     })
                 })
+                console.log(answersResponse)
+                console.log(`Chatflow ${!answersResponse.ok && 'not'} saved to AnswerAI`)
             } catch (error) {
                 console.log('Syncing to Sidekick failed', error)
             }
