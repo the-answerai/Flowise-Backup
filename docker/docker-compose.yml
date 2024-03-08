@@ -33,6 +33,15 @@ services:
             - ANSWERAI_DOMAIN=${ANSWERAI_DOMAIN}
             - ANSWERAI_API_KEY=${ANSWERAI_API_KEY}
             - DOMAIN=${DOMAIN}
+            - AUTH0_JWKS_URI=${AUTH0_JWKS_URI}
+            - AUTH0_SECRET=${AUTH0_SECRET}
+            - AUTH0_ISSUER_BASE_URL=${AUTH0_ISSUER_BASE_URL}
+            - AUTH0_BASE_URL=${AUTH0_BASE_URL}
+            - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+            - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
+            - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+            - AUTH0_SCOPE=${AUTH0_SCOPE}
+            - AUTH0_TOKEN_SIGN_ALG=${AUTH0_TOKEN_SIGN_ALG}
         ports:
             - '${PORT}:${PORT}'
         volumes:
