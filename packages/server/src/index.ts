@@ -201,7 +201,7 @@ export class App {
                 if (!whitelistURLs.some((url) => req.url.includes(url))) {
                     const isInvalidOrg =
                         !!process.env.AUTH0_ORGANIZATION_ID && process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
-                    console.log('Auth', req.url, req?.auth?.payload?.org_id)
+                    console.log('Auth', req.url, req?.auth?.payload)
                     if (isInvalidOrg) {
                         res.status(401).send('Unauthorized')
                     } else {
@@ -459,7 +459,7 @@ export class App {
                         chatflow: {
                             ...results
                         },
-                        chatflowDomain: `${process.env.DOMAIN}`
+                        chatflowDomain: req.auth?.payload?.chatflowDomain
                     })
                 })
                 console.log('Chatflow saved to AnswerAI')
@@ -512,7 +512,7 @@ export class App {
                     },
                     body: JSON.stringify({
                         chatflow: result,
-                        chatflowDomain: `${process.env.DOMAIN}`
+                        chatflowDomain: req.auth?.payload?.chatflowDomain
                     })
                 })
                 console.log(answersResponse)
