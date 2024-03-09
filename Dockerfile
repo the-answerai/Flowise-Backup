@@ -95,4 +95,5 @@ COPY env.sh /docker-entrypoint.d/env.sh
 RUN chmod +x /docker-entrypoint.d/env.sh
 
 # Run the application.
-CMD yarn start
+ENTRYPOINT ["/docker-entrypoint.d/env.sh"]
+CMD ["yarn start"]

@@ -29,7 +29,10 @@ root.render(
             domain={process.env.REACT_APP_AUTH_DOMAIN}
             clientId={process.env.REACT_APP_AUTH_CLIENT_ID}
             authorizationParams={{
-                organization: process.env.REACT_APP_AUTH_ORGANIZATION_ID,
+                organization:
+                    process.env.REACT_APP_AUTH_ORGANIZATION_ID !== 'MY_APP_REACT_APP_AUTH_ORGANIZATION_ID'
+                        ? process.env.REACT_APP_AUTH_ORGANIZATION_ID
+                        : undefined,
                 redirect_uri: window.location.origin,
                 audience: process.env.REACT_APP_AUTH_AUDIENCE,
                 scope: 'openid profile email'
