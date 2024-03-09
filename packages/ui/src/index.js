@@ -17,6 +17,12 @@ import { ReactFlowContext } from 'store/context/ReactFlowContext'
 const container = document.getElementById('root')
 const root = createRoot(container)
 
+console.log({
+    REACT_APP_AUTH_DOMAIN: process.env.REACT_APP_AUTH_DOMAIN,
+    REACT_APP_AUTH_CLIENT_ID: process.env.REACT_APP_AUTH_CLIENT_ID,
+    REACT_APP_AUTH_ORGANIZATION_ID: process.env.REACT_APP_AUTH_ORGANIZATION_ID,
+    REACT_APP_AUTH_AUDIENCE: process.env.REACT_APP_AUTH_AUDIENCE
+})
 root.render(
     <React.StrictMode>
         <Auth0Provider

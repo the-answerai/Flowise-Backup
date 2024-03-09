@@ -91,5 +91,8 @@ COPY --from=build /usr/src/packages/packages/server/marketplaces ./packages/serv
 # Expose the port that the application listens on.
 EXPOSE 4000
 
+COPY env.sh /docker-entrypoint.d/env.sh
+RUN chmod +x /docker-entrypoint.d/env.sh
+
 # Run the application.
 CMD yarn start
