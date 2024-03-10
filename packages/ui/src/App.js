@@ -28,7 +28,6 @@ const App = () => {
                     scope: 'openid profile email write:sidekicks',
                     authorizationParams: {}
                 })
-                console.log('Token', newToken)
                 localStorage.setItem('access_token', newToken)
                 setToken(newToken)
             } catch (err) {
@@ -38,11 +37,9 @@ const App = () => {
     }, [getAccessTokenSilently])
     React.useEffect(() => {
         if (!isLoading && !isAuthenticated && !error) {
-            console.log('AUTHENTICATION NOT FOUND')
             loginWithRedirect()
         }
-        console.log({ user })
-    }, [user, isLoading, isAuthenticated, loginWithRedirect])
+    }, [user, error, isLoading, isAuthenticated, loginWithRedirect])
 
     return (
         <StyledEngineProvider injectFirst>

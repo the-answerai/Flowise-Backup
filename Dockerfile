@@ -96,4 +96,4 @@ RUN chmod +x /docker-entrypoint.d/env.sh
 
 # Run the application.
 ENTRYPOINT ["/docker-entrypoint.d/env.sh"]
-CMD ["yarn start"]
+CMD ["yarn", "start"]

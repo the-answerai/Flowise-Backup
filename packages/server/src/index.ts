@@ -200,10 +200,12 @@ export class App {
             if (req.url.includes('/api/v1/')) {
                 if (!whitelistURLs.some((url) => req.url.includes(url))) {
                     const isInvalidOrg =
-                        !!process.env.AUTH0_ORGANIZATION_ID && process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
+                        (!!process.env.AUTH0_ORGANIZATION_ID || !!req?.auth?.payload?.org_id) &&
+                        process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
                     console.log('Auth', req.url, req?.auth?.payload)
                     if (isInvalidOrg) {
-                        res.status(401).send('Unauthorized')
+                        console.log('Invalid org', process.env.AUTH0_ORGANIZATION_ID, '!==', req?.auth?.payload?.org_id)
+                        res.status(401).send("Unauthorized: Organization doesn't match")
                     } else {
                         next()
                     }
@@ -446,9 +448,9 @@ export class App {
             Object.assign(newChatFlow, body)
             const chatflow = this.AppDataSource.getRepository(ChatFlow).create(newChatFlow)
             const results = await this.AppDataSource.getRepository(ChatFlow).save(chatflow)
-
+            const ANSWERAI_DOMAIN = req.auth?.payload.answersDomain ?? process.env.ANSWERAI_DOMAIN ?? 'https://beta.theanswer.ai'
             try {
-                await fetch(process.env.ANSWERAI_DOMAIN + '/api/sidekicks/new', {
+                await fetch(ANSWERAI_DOMAIN + '/api/sidekicks/new', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -462,10 +464,10 @@ export class App {
                         chatflowDomain: req.auth?.payload?.chatflowDomain
                     })
                 })
-                console.log('Chatflow saved to AnswerAI')
-            } catch (error) {
-                console.log('Syncing to Sidekick failed', error)
+            } catch (err) {
+                return res.status(500).send('Error saving to Answers')
             }
+
             await this.telemetry.sendTelemetry('chatflow_created', {
                 version: await getAppVersion(),
                 chatlowId: results.id,
@@ -499,27 +501,22 @@ export class App {
             // chatFlowPool is initialized only when a flow is opened
             // if the user attempts to rename/update category without opening any flow, chatFlowPool will be undefined
             if (this.chatflowPool) {
-                // Update chatflowpool inSync to false, to build Langchain again because data has been changed
+                // Update chatflowpool inSync to fallse, to build Langchain again because data has been changed
                 this.chatflowPool.updateInSync(chatflow.id, false)
             }
-            try {
-                console.log('Sync', req.auth)
-                const answersResponse = await fetch(process.env.ANSWERAI_DOMAIN + '/api/sidekicks/new', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: 'Bearer ' + req.auth?.token!
-                    },
-                    body: JSON.stringify({
-                        chatflow: result,
-                        chatflowDomain: req.auth?.payload?.chatflowDomain
-                    })
+            const ANSWERAI_DOMAIN = req.auth?.payload.answersDomain ?? process.env.ANSWERAI_DOMAIN ?? 'https://beta.theanswer.ai'
+            await fetch(ANSWERAI_DOMAIN + '/api/sidekicks/new', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Bearer ' + req.auth?.token!
+                },
+                body: JSON.stringify({
+                    chatflow: result,
+                    chatflowDomain: req.auth?.payload?.chatflowDomain
                 })
-                console.log(answersResponse)
-                console.log(`Chatflow ${!answersResponse.ok && 'not'} saved to AnswerAI`)
-            } catch (error) {
-                console.log('Syncing to Sidekick failed', error)
-            }
+            })
+
             return res.json(result)
         })
 

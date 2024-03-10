@@ -17,26 +17,19 @@ import { ReactFlowContext } from 'store/context/ReactFlowContext'
 const container = document.getElementById('root')
 const root = createRoot(container)
 
-console.log({
-    REACT_APP_AUTH_DOMAIN: process.env.REACT_APP_AUTH_DOMAIN,
-    REACT_APP_AUTH_CLIENT_ID: process.env.REACT_APP_AUTH_CLIENT_ID,
-    REACT_APP_AUTH_ORGANIZATION_ID: process.env.REACT_APP_AUTH_ORGANIZATION_ID,
-    REACT_APP_AUTH_AUDIENCE: process.env.REACT_APP_AUTH_AUDIENCE
-})
+const authorizationParams = {
+    organization: process.env.REACT_APP_AUTH_ORGANIZATION_ID !== '' ? process.env.REACT_APP_AUTH_ORGANIZATION_ID : undefined,
+    redirect_uri: window.location.origin,
+    audience: process.env.REACT_APP_AUTH_AUDIENCE,
+    scope: 'openid profile email'
+}
+console.log(authorizationParams)
 root.render(
     <React.StrictMode>
         <Auth0Provider
             domain={process.env.REACT_APP_AUTH_DOMAIN}
             clientId={process.env.REACT_APP_AUTH_CLIENT_ID}
-            authorizationParams={{
-                organization:
-                    process.env.REACT_APP_AUTH_ORGANIZATION_ID !== 'MY_APP_REACT_APP_AUTH_ORGANIZATION_ID'
-                        ? process.env.REACT_APP_AUTH_ORGANIZATION_ID
-                        : undefined,
-                redirect_uri: window.location.origin,
-                audience: process.env.REACT_APP_AUTH_AUDIENCE,
-                scope: 'openid profile email'
-            }}
+            authorizationParams={authorizationParams}
         >
             <Provider store={store}>
                 <BrowserRouter>
