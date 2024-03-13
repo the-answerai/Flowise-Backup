@@ -33,6 +33,8 @@ FROM base as deps
 # into this layer.
 RUN --mount=type=bind,source=package.json,target=package.json \
   --mount=type=bind,source=packages/ui/package.json,target=packages/ui/package.json \
+  --mount=type=bind,source=packages/embed/package.json,target=packages/embed/package.json \
+  --mount=type=bind,source=packages/embed-react/package.json,target=packages/embed-react/package.json \
   --mount=type=bind,source=packages/server/package.json,target=packages/server/package.json \
   --mount=type=bind,source=packages/components/package.json,target=packages/components/package.json \
   --mount=type=bind,source=yarn.lock,target=yarn.lock \
@@ -47,6 +49,8 @@ FROM deps as build
 # "devDependencies" to be installed to build. If you don't need this, remove this step.
 RUN --mount=type=bind,source=package.json,target=package.json \
   --mount=type=bind,source=packages/ui/package.json,target=packages/ui/package.json \
+  --mount=type=bind,source=packages/embed/package.json,target=packages/embed/package.json \
+  --mount=type=bind,source=packages/embed-react/package.json,target=packages/embed-react/package.json \
   --mount=type=bind,source=packages/server/package.json,target=packages/server/package.json \
   --mount=type=bind,source=packages/components/package.json,target=packages/components/package.json \
   --mount=type=bind,source=yarn.lock,target=yarn.lock \
@@ -72,6 +76,8 @@ COPY package.json .
 COPY packages/components/package.json ./packages/components/package.json
 # Copy ui package.json
 COPY packages/ui/package.json ./packages/ui/package.json
+COPY packages/embed/package.json ./packages/embed/package.json
+COPY packages/embed-react/package.json ./packages/embed-react/package.json
 # Copy server package.json
 COPY packages/server/package.json ./packages/server/package.json
 
@@ -80,10 +86,14 @@ COPY packages/server/package.json ./packages/server/package.json
 COPY --from=deps /usr/src/packages/packages/components/node_modules ./packages/components/node_modules
 COPY --from=deps /usr/src/packages/packages/server/node_modules ./packages/server/node_modules
 COPY --from=deps /usr/src/packages/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=deps /usr/src/packages/packages/embed/node_modules ./packages/embed/node_modules
+COPY --from=deps /usr/src/packages/packages/embed-react/node_modules ./packages/embed-react/node_modules
 COPY --from=build /usr/src/packages/node_modules ./node_modules
 COPY --from=build /usr/src/packages/packages/components/dist ./packages/components/dist
 COPY --from=build /usr/src/packages/packages/components/nodes ./packages/components/nodes
 COPY --from=build /usr/src/packages/packages/ui/build ./packages/ui/build
+COPY --from=build /usr/src/packages/packages/embed/dist ./packages/embed/dist
+COPY --from=build /usr/src/packages/packages/embed-react/dist ./packages/embed-react/dist
 COPY --from=build /usr/src/packages/packages/server/dist ./packages/server/dist
 COPY --from=build /usr/src/packages/packages/server/bin ./packages/server/bin
 COPY --from=build /usr/src/packages/packages/server/marketplaces ./packages/server/marketplaces

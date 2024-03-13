@@ -61,7 +61,7 @@ import { ChatflowPool } from './ChatflowPool'
 import { CachePool } from './CachePool'
 import { ICommonObject, IMessage, INodeOptionsValue, handleEscapeCharacters, webCrawl, xmlScrape } from 'flowise-components'
 import { createRateLimiter, getRateLimiter, initializeRateLimiter } from './utils/rateLimit'
-import { addAPIKey, compareKeys, deleteAPIKey, findAPIKey, getApiKey, getAPIKeys, updateAPIKey } from './utils/apiKey'
+import { addAPIKey, compareKeys, deleteAPIKey, getApiKey, getAPIKeys, updateAPIKey } from './utils/apiKey'
 import { sanitizeMiddleware, getCorsOptions, getAllowedIframeOrigins } from './utils/XSS'
 import axios from 'axios'
 import { Client } from 'langchainhub'
@@ -151,18 +151,18 @@ export class App {
 
         // Add the sanitizeMiddleware to guard against XSS
         this.app.use(sanitizeMiddleware)
-        const whitelistURLs = [
-            '/api/v1/verify/apikey/',
-            '/api/v1/chatflows/apikey/',
-            '/api/v1/public-chatflows',
-            '/api/v1/public-chatbotConfig',
-            // '/api/v1/prediction/',
-            '/api/v1/vector/upsert/',
-            '/api/v1/node-icon/',
-            '/api/v1/components-credentials-icon/',
-            '/api/v1/chatflows-streaming',
-            '/api/v1/openai-assistants-file',
-            '/api/v1/ip'
+        const whitelistURLs: string[] = [
+            // '/api/v1/verify/apikey/',
+            // '/api/v1/chatflows/apikey/',
+            // '/api/v1/public-chatflows',
+            // '/api/v1/public-chatbotConfig',
+            // // '/api/v1/prediction/',
+            // '/api/v1/vector/upsert/',
+            // '/api/v1/node-icon/',
+            // '/api/v1/components-credentials-icon/',
+            // '/api/v1/chatflows-streaming',
+            // '/api/v1/openai-assistants-file',
+            // '/api/v1/ip'
         ]
         if (process.env.FLOWISE_USERNAME && process.env.FLOWISE_PASSWORD) {
             const username = process.env.FLOWISE_USERNAME
@@ -188,9 +188,25 @@ export class App {
             tokenSigningAlg: process.env.AUTH0_TOKEN_SIGN_ALG
         })
 
-        // enforce on all endpoints
-
+        // // enforce on all endpoints
         this.app.use((req, res, next) => {
+            const {
+                headers: { cookie }
+            } = req
+            if (cookie) {
+                const values = cookie.split(';').reduce((res, item) => {
+                    const data = item.trim().split('=')
+                    return { ...res, [data[0]]: data[1] }
+                }, {})
+                res.locals.cookie = values
+            } else res.locals.cookie = {}
+            next()
+        })
+        this.app.use((req, res, next) => {
+            /// ADD Authorization cookie
+            if (res.locals?.cookie?.Authorization) {
+                req.headers.authorization = `Bearer ${res.locals.cookie.Authorization}`
+            }
             if (req.url.includes('/api/v1/')) {
                 whitelistURLs.some((url) => req.url.includes(url)) ? next() : jwtCheck(req, res, next)
             } else next()
@@ -198,11 +214,23 @@ export class App {
 
         this.app.use((req, res, next) => {
             if (req.url.includes('/api/v1/')) {
+                if (req.auth?.token) {
+                    res.cookie('Authorization', req.auth?.token, {
+                        // name:
+                        //   process.env.NODE_ENV === 'production'
+                        //     ? `__Secure-next-auth.session-token`
+                        //     : `next-auth.session-token`,
+                        httpOnly: true,
+                        sameSite: 'none'
+                        // path: '/',
+                        // secure: true
+                    })
+                }
+
                 if (!whitelistURLs.some((url) => req.url.includes(url))) {
                     const isInvalidOrg =
                         (!!process.env.AUTH0_ORGANIZATION_ID || !!req?.auth?.payload?.org_id) &&
                         process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
-                    console.log('Auth', req.url, req?.auth?.payload)
                     if (isInvalidOrg) {
                         console.log('Invalid org', process.env.AUTH0_ORGANIZATION_ID, '!==', req?.auth?.payload?.org_id)
                         res.status(401).send("Unauthorized: Organization doesn't match")
@@ -579,8 +607,9 @@ export class App {
         // ----------------------------------------
 
         // Get all chatmessages from chatflowid
-        this.app.get('/api/v1/chatmessage/:id', async (req: Request, res: Response) => {
+        this.app.get('/api/v1/chatmessage', async (req: Request, res: Response) => {
             const sortOrder = req.query?.order as string | undefined
+            const chatflowId = (req.query?.chatflowId ?? req.query?.id) as string
             const chatId = req.query?.chatId as string | undefined
             const memoryType = req.query?.memoryType as string | undefined
             const sessionId = req.query?.sessionId as string | undefined
@@ -605,7 +634,7 @@ export class App {
             }
 
             const chatmessages = await this.getChatMessage(
-                req.params.id,
+                chatflowId,
                 chatTypeFilter,
                 sortOrder,
                 chatId,

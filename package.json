@@ -22,6 +22,7 @@
         "lint": "eslint \"**/*.{js,jsx,ts,tsx,json,md}\"",
         "lint-fix": "yarn lint --fix",
         "quick": "pretty-quick --staged",
+        "preinstall": "yarn config set ignore-engines true",
         "postinstall": "husky install",
         "migration:create": "yarn typeorm migration:create"
     },
