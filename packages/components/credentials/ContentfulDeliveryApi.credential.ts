@@ -9,7 +9,7 @@ class ContentfulDeliveryApi implements INodeCredential {
 
     constructor() {
         this.label = 'Contentful Delivery API'
-        this.name = 'contetnfulDeliveryApi'
+        this.name = 'contentfulDeliveryApi'
         this.version = 1.0
         this.description =
             'Refer to <a target="_blank" href="https://www.contentful.com/developers/docs/references/content-delivery-api/">official guide</a> on how to get your delivery keys in Contentful'
