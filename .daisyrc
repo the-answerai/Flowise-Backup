@@ -27,6 +27,7 @@ const config = (CODE_BASE_PATH) => {
     codeBasePath: CODE_BASE_PATH,
     pineconeIndexName: PINECONE_INDEX_NAME,
     pineconeNamespace: PINECONE_NAMESPACE,
+    daisyDirectory: DAISY_DIRECTORY,
     daisyDirectoryName: DAISY_DIRECTORY_NAME,
     markdownDirectory: MARKDOWN_DIRECTORY,
     promptsFilePath: PROMPTS_FILE_PATH,
@@ -55,6 +56,10 @@ const config = (CODE_BASE_PATH) => {
       "generated",
       ".yarn",
       "patches",
+      ".turbo",
+      ".yarn",
+      "/server/logs",
+      "marketplaces",
       DAISY_DIRECTORY,
     ],
     invalidFileTypes: [
@@ -97,6 +102,7 @@ const config = (CODE_BASE_PATH) => {
       ".deb",
       ".rpm",
       ".lock",
+      ".DS_Store",
     ],
     invalidFileNames: [
       "pnpm-lock.yaml",
@@ -105,6 +111,8 @@ const config = (CODE_BASE_PATH) => {
       ".env",
       ".DS_Store",
       ".gitignore",
+      "artillery-load-test.yml",
+      "yarn.lock",
     ],
     fileTypes: {
       docs: {
@@ -112,6 +120,7 @@ const config = (CODE_BASE_PATH) => {
         skipCompletion: true,
       },
       react: {
+        pathIncludes: ["/ui-component/", "ui/src/layout"],
         fileTypes: [".jsx", ".tsx"],
         prompt: "react.prompt",
         template: "react.md",
@@ -140,10 +149,10 @@ const config = (CODE_BASE_PATH) => {
         prompt: "script.prompt",
         template: "script.md",
       },
-      contentModel: {
-        pathIncludes: ["content_types"],
-        prompt: "contentModel.prompt",
-        template: "contentModel.md",
+      nodes: {
+        pathIncludes: ["components/nodes"],
+        prompt: "nodes.prompt",
+        template: "nodes.md",
       },
       default: {
         prompt: "default.prompt",

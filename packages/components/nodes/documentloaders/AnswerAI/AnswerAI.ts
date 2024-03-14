@@ -53,17 +53,16 @@ class AnswerAI_DocumentLoaders implements INode {
 
         const docType = nodeData.inputs?.docType as string
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
+        const metadata = nodeData.inputs?.metadata
 
         const accessToken = getCredentialParam('apiKey', credentialData, nodeData)
 
-        const documentOptions: Document = {
-            pageContent: '',
-            metadata: {
-                contentType: docType
-            }
+        const documentOptions: AnswerAILoaderParams = {
+            docType,
+            metadata
         }
 
-        const loader = new ContentfulLoader(documentOptions)
+        const loader = new AnswerAILoader(documentOptions)
 
         let docs = []
 
@@ -73,21 +72,21 @@ class AnswerAI_DocumentLoaders implements INode {
             docs = await loader.load()
         }
 
-        if (metadata) {
-            const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
-            let finaldocs = []
-            for (const doc of docs) {
-                const newdoc = {
-                    ...doc,
-                    metadata: {
-                        ...doc.metadata,
-                        ...parsedMetadata
-                    }
-                }
-                finaldocs.push(newdoc)
-            }
-            return finaldocs
-        }
+        // if (metadata) {
+        //     const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
+        //     let finaldocs = []
+        //     for (const doc of docs) {
+        //         const newdoc = {
+        //             ...doc,
+        //             metadata: {
+        //                 ...doc.metadata,
+        //                 ...parsedMetadata
+        //             }
+        //         }
+        //         finaldocs.push(newdoc)
+        //     }
+        //     return finaldocs
+        // }
 
         return docs
     }
@@ -95,7 +94,7 @@ class AnswerAI_DocumentLoaders implements INode {
 
 interface AnswerAILoaderParams {
     docType: string
-    metadata: string
+    metadata: ICommonObject
 }
 
 interface AnswerAILoaderResponse {
@@ -119,7 +118,7 @@ interface IContentObject {
     sys: any // Adjust this type according to your sys object structure
 }
 
-class ContentfulLoader extends BaseDocumentLoader {
+class AnswerAILoader extends BaseDocumentLoader {
     public readonly docType: string
 
     public readonly metadata?: ICommonObject
@@ -131,18 +130,18 @@ class ContentfulLoader extends BaseDocumentLoader {
 
         // Check if metadata is a non-empty string, then try to parse it.
         // If parsing fails or if metadata is not a string, use the default empty object.
-        if (typeof metadata === 'string' && metadata.trim() !== '') {
-            try {
-                this.metadata = JSON.parse(metadata)
-            } catch (error) {
-                console.warn('Failed to parse metadata:', error)
-                this.metadata = {}
-            }
-        } else if (typeof metadata === 'object') {
-            this.metadata = metadata
-        } else {
-            this.metadata = {}
-        }
+        // if (typeof metadata === 'string' && metadata.trim() !== '') {
+        //     try {
+        //         this.metadata = JSON.parse(metadata)
+        //     } catch (error) {
+        //         console.warn('Failed to parse metadata:', error)
+        //         this.metadata = {}
+        //     }
+        // } else if (typeof metadata === 'object') {
+        //     this.metadata = metadata
+        // } else {
+        //     this.metadata = {}
+        // }
     }
 
     public async load(): Promise<Document[]> {
@@ -151,75 +150,57 @@ class ContentfulLoader extends BaseDocumentLoader {
 
     private processContentObject(contentObject: IContentObject): string {
         const { fields } = contentObject
+        return Object.entries(fields).join('')
 
-        return Object.entries(fields)
-            .map(([fieldName, fieldValue]) => {
-                // Check if the field is a rich text field
-                if (typeof fieldValue === 'object' && fieldValue.nodeType === 'document') {
-                    const plainText = documentToPlainTextString(fieldValue) // TODO: add support for embedded assets and entries
-                    return `${fieldName}: ${plainText}\n\n`
-                }
-                // For string fields
-                else if (typeof fieldValue === 'string') {
-                    return `${fieldName}: ${fieldValue}\n\n`
-                }
+        // return Object.entries(fields)
+        //     .map(([fieldName, fieldValue]) => {
+        //         // Check if the field is a rich text field
+        //         if (typeof fieldValue === 'object' && fieldValue.nodeType === 'document') {
+        //             const plainText = documentToPlainTextString(fieldValue) // TODO: add support for embedded assets and entries
+        //             return `${fieldName}: ${plainText}\n\n`
+        //         }
+        //         // For string fields
+        //         else if (typeof fieldValue === 'string') {
+        //             return `${fieldName}: ${fieldValue}\n\n`
+        //         }
 
-                // TODO: Handle references to other entries and assets
+        //         // TODO: Handle references to other entries and assets
 
-                // TODO: Return empty for now, handle other types as needed
-                return ``
-            })
-            .join('')
+        //         // TODO: Return empty for now, handle other types as needed
+        //         return ``
+        //     })
+        //     .join('')
     }
 
-    private createDocumentFromEntry(entry: ContentfulEntry): Document {
-        const textContent = this.processContentObject(entry)
-        const entryUrl = `https://app.contentful.com/spaces/${this.spaceId}/environments/${this.environmentId}/entries/${entry.sys.id}`
-        // console.log('Entry', entry)
+    private createDocumentFromEntry(entry: AnswerAIDocument): Document {
+        const textContent = 'Hello world'
+        const entryUrl = `https://theanswer.ai/`
 
-        // Return a langchain document
         return new Document({
             pageContent: textContent,
             metadata: {
-                contentType: this.contentType,
-                source: entryUrl,
-                entryId: entry.sys.id,
-                doctype: 'contentfulEntry'
+                docType: this.docType,
+                doctype: 'contentfulEntry',
+                source: entryUrl
             }
         })
     }
 
     private async runQuery(): Promise<Document[]> {
         const params: ICommonObject = { pageSize: 100, skip: 0 }
-        let data: ContentfulLoaderResponse
-        let returnPages: ContentfulEntry[] = []
+        let data: AnswerAILoaderResponse
+        let returnPages: AnswerAIDocument[] = []
         let query = this.metadata || {}
 
-        if (this.limit && !this.includeAll) {
-            query.limit = this.limit
-        }
-        if (this.include) {
-            query.include = this.include
-        }
-
-        if (this.contentType) {
-            query.content_type = this.contentType
-        }
-
-        const client = contentful.createClient({
-            space: this.spaceId,
-            environment: this.environmentId,
-            accessToken: this.accessToken
-        })
-
-        do {
-            console.log('Metadata', query)
-            data = await client.getEntries(query)
-            console.log('Items', data.items.length)
-            returnPages.push.apply(returnPages, data.items)
-            query.skip = (data?.skip || 0) + (data?.limit || 1)
-        } while (this.includeAll && data.total !== 0)
         return returnPages.map((page) => this.createDocumentFromEntry(page))
+        // do {
+        //     console.log('Metadata', query)
+        //     data = await client.getEntries(query)
+        //     console.log('Items', data.items.length)
+        //     returnPages.push.apply(returnPages, data.items)
+        //     query.skip = (data?.skip || 0) + (data?.limit || 1)
+        // } while (this.includeAll && data.total !== 0)
+        // return returnPages.map((page) => this.createDocumentFromEntry(page))
     }
 }
 

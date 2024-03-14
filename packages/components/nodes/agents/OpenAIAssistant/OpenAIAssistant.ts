@@ -61,6 +61,13 @@ class OpenAIAssistant_Agents implements INode {
                     'Messages can contain text, images, or files. In some cases, you may want to prevent others from downloading the files. Learn more from OpenAI File Annotation <a target="_blank" href="https://platform.openai.com/docs/assistants/how-it-works/managing-threads-and-messages">docs</a>',
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'ASsistant Overide',
+                name: 'assistantOveride',
+                type: 'string',
+                optional: true,
+                additionalParams: true
             }
         ]
     }

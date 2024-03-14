@@ -278,9 +278,13 @@ class JiraLoader extends BaseDocumentLoader {
                 Key: ${issue.key}
                 Summary: ${fields?.summary}
                 Status: ${fields?.status?.name}
+                Priority: ${fields?.priority?.name}
                 Last Updated: ${fields?.updated}
+                Created By; ${fields?.creator?.displayName}
                 Assigned To: ${JSON.stringify(fields?.assignee?.displayName, null, 2)}
                 Description: ${this.processRichTextFields(fields?.description)}
+                Github URL: ${fields?.customfield_10000} // Check custom field
+                Related Tickets: ${fields?.issuelinks?.map((link: any) => link?.inwardIssue?.key).join(', ')}
                 Comments: 
                 `,
                 metadata: {

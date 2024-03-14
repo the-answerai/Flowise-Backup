@@ -28,7 +28,7 @@ class GoogleDrive_DocumentLoaders implements INode {
             label: 'Connect Credential',
             name: 'credential',
             type: 'credential',
-            credentialNames: ['contetnfulDeliveryApi'] // This should be changed to the correct credential name
+            credentialNames: ['googleDriveAPI'] // This should be changed to the correct credential name
         }
         this.inputs = [
             {
@@ -55,7 +55,7 @@ interface IContentObject {
     sys: any // Adjust this type according to your sys object structure
 }
 
-class DasiyLoader extends BaseDocumentLoader {
+class GoogleDriveLoader extends BaseDocumentLoader {
     public readonly metadata?: ICommonObject
 
     constructor() {

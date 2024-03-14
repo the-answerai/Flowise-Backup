@@ -30,7 +30,7 @@ class Dasiy_DocumentLoaders implements INode {
             label: 'Connect Credential',
             name: 'credential',
             type: 'credential',
-            credentialNames: ['contetnfulDeliveryApi']
+            credentialNames: ['dailyApi']
         }
         this.inputs = [
             {

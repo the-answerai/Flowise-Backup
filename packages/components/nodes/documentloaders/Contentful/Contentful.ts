@@ -1,10 +1,66 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { TextSplitter } from 'langchain/text_splitter'
 import { BaseDocumentLoader } from 'langchain/document_loaders/base'
+import { Block, Inline, Node, helpers } from '@contentful/rich-text-types'
 import { Document } from 'langchain/document'
 import * as contentful from 'contentful'
-import { documentToPlainTextString } from '@contentful/rich-text-plain-text-renderer'
+// import { documentToPlainTextString } from '@contentful/rich-text-plain-text-renderer'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
+
+export function documentToPlainTextString(
+    rootNode: Block | Inline,
+    blockDivisor: string = ' ',
+    parsingRules: any = {},
+    processContentObjectMethod: Function
+): string {
+    if (!rootNode || !rootNode.content || !Array.isArray(rootNode.content)) {
+        /**
+         * Handles edge cases, such as when the value is not set in the CMA or the
+         * field has not been properly validated, e.g. because of a user extension.
+         * Note that we are nevertheless strictly type-casting `rootNode` as
+         * Block | Inline. Valid rich text documents (and their branch block nodes)
+         * should never lack a Node[] `content` property.
+         */
+        return ''
+    }
+
+    return (rootNode as Block).content.reduce((acc: string, node: Node, i: number): string => {
+        let nodeTextValue: string = ''
+
+        // Check against parsing rules before processing the node
+        if (node.nodeType in parsingRules && parsingRules[node.nodeType] === false) {
+            // Skip processing this node as per the parsing rules
+            return acc
+        }
+
+        if (helpers.isText(node)) {
+            nodeTextValue = node.value
+        } else if (helpers.isBlock(node) || helpers.isInline(node)) {
+            if (node.nodeType === 'embedded-asset-block') {
+                nodeTextValue = `![${node.data.target.fields.title}](https:${node.data.target.fields.file.url})`
+            } else if (node.nodeType === 'embedded-entry-block' || node.nodeType === 'embedded-entry-inline') {
+                // Assuming node.data.target contains the content object for the embedded entry
+                const embeddedContentObject = node.data.target
+                // Call processContentObject on the embedded content object
+                // You might need to adjust how you access the configuration for specific content types
+                nodeTextValue = processContentObjectMethod(
+                    embeddedContentObject,
+                    parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]
+                )
+            } else {
+                nodeTextValue = documentToPlainTextString(node, blockDivisor, parsingRules, processContentObjectMethod)
+            }
+            if (!nodeTextValue.length) {
+                return acc
+            }
+        }
+
+        const nextNode = rootNode.content[i + 1]
+        const isNextNodeBlock = nextNode && helpers.isBlock(nextNode)
+        const divisor = isNextNodeBlock ? blockDivisor : ''
+        return acc + nodeTextValue + divisor
+    }, '')
+}
 
 class Contentful_DocumentLoaders implements INode {
     label: string
@@ -39,6 +95,12 @@ class Contentful_DocumentLoaders implements INode {
                 name: 'textSplitter',
                 type: 'TextSplitter',
                 optional: true
+            },
+            {
+                label: 'Config Utility',
+                name: 'configUtility',
+                type: 'json',
+                acceptVariable: true
             },
             {
                 label: ' Content Type',
@@ -96,6 +158,7 @@ class Contentful_DocumentLoaders implements INode {
 
         const environmentId = nodeData.inputs?.environmentId as string
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
+        const configUtility = (nodeData.inputs?.configUtility as ICommonObject) ?? {}
         const metadata = nodeData.inputs?.metadata
         const include = nodeData.inputs?.include as number
         const limit = nodeData.inputs?.limit as number
@@ -113,7 +176,8 @@ class Contentful_DocumentLoaders implements INode {
             includeAll,
             limit,
             metadata,
-            contentType
+            contentType,
+            configUtility
         }
 
         const loader = new ContentfulLoader(contentfulOptions)
@@ -155,6 +219,7 @@ interface ContentfulLoaderParams {
     contentType: string
     includeAll?: boolean
     metadata?: any
+    configUtility: ICommonObject
 }
 
 interface ContentfulLoaderResponse {
@@ -197,7 +262,19 @@ class ContentfulLoader extends BaseDocumentLoader {
 
     public readonly metadata?: ICommonObject
 
-    constructor({ spaceId, environmentId, accessToken, metadata = {}, include, limit, contentType, includeAll }: ContentfulLoaderParams) {
+    public readonly configUtility: ICommonObject
+
+    constructor({
+        spaceId,
+        environmentId,
+        accessToken,
+        metadata = {},
+        include,
+        limit,
+        contentType,
+        includeAll,
+        configUtility
+    }: ContentfulLoaderParams) {
         super()
         this.spaceId = spaceId
         this.environmentId = environmentId
@@ -221,20 +298,46 @@ class ContentfulLoader extends BaseDocumentLoader {
         } else {
             this.metadata = {}
         }
+
+        if (typeof configUtility === 'string') {
+            try {
+                this.configUtility = JSON.parse(JSON.parse(configUtility).config)[0]
+            } catch (error) {
+                console.warn('Failed to parse config:', error)
+                this.configUtility = {
+                    fieldsToParse: [],
+                    fieldsForCitation: {
+                        titleField: 'title',
+                        slugField: 'slug',
+                        urlPrefix: 'https://www.example.com/'
+                    },
+                    richTextParsingRules: {
+                        embeddedContentTypes: {}
+                    }
+                }
+            }
+        }
     }
 
     public async load(): Promise<Document[]> {
         return this.runQuery()
     }
 
-    private processContentObject(contentObject: IContentObject): string {
+    private processContentObject(contentObject: IContentObject, fieldsConfig?: string[]): string {
         const { fields } = contentObject
+        const fieldsToProcess = fieldsConfig || this.configUtility.fieldsToParse // Fallback to default fields if none specified
 
         return Object.entries(fields)
+            .filter(([fieldName]) => fieldsToProcess.includes(fieldName))
             .map(([fieldName, fieldValue]) => {
                 // Check if the field is a rich text field
                 if (typeof fieldValue === 'object' && fieldValue.nodeType === 'document') {
-                    const plainText = documentToPlainTextString(fieldValue) // TODO: add support for embedded assets and entries
+                    const plainText = documentToPlainTextString(
+                        fieldValue,
+                        '\n',
+                        this.configUtility.richTextParsingRules,
+                        this.processContentObject
+                    ) // TODO: add support for embedded assets and entries
                     return `${fieldName}: ${plainText}\n\n`
                 }
                 // For string fields
@@ -254,6 +357,9 @@ class ContentfulLoader extends BaseDocumentLoader {
         const textContent = this.processContentObject(entry)
         const entryUrl = `https://app.contentful.com/spaces/${this.spaceId}/environments/${this.environmentId}/entries/${entry.sys.id}`
         // console.log('Entry', entry)
+        const title = entry.fields[this.configUtility.fieldsForCitation.titleField] || entry.sys.id
+        const slug = entry.fields[this.configUtility.fieldsForCitation.slugField] || entry.sys.id
+        const url = `${this.configUtility.fieldsForCitation.urlPrefix}${slug}`
 
         // Return a langchain document
         return new Document({
@@ -262,7 +368,9 @@ class ContentfulLoader extends BaseDocumentLoader {
                 contentType: this.contentType,
                 source: entryUrl,
                 entryId: entry.sys.id,
-                doctype: 'contentfulEntry'
+                doctype: 'contentfulEntry',
+                title,
+                url
             }
         })
     }
@@ -291,9 +399,7 @@ class ContentfulLoader extends BaseDocumentLoader {
         })
 
         do {
-            console.log('Metadata', query)
             data = await client.getEntries(query)
-            console.log('Items', data.items.length)
             returnPages.push.apply(returnPages, data.items)
             query.skip = (data?.skip || 0) + (data?.limit || 1)
         } while (this.includeAll && data.total !== 0)
