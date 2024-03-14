@@ -221,9 +221,9 @@ export class App {
                         //     ? `__Secure-next-auth.session-token`
                         //     : `next-auth.session-token`,
                         httpOnly: true,
-                        sameSite: 'none'
+                        sameSite: 'none',
                         // path: '/',
-                        // secure: true
+                        secure: true
                     })
                 }
 

@@ -45,3 +45,6 @@
 **/*.tgz
 
 daisy
+
+# sst
+.sst

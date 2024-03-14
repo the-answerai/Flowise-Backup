@@ -30,5 +30,8 @@
 **/values.dev.yaml
 **/build
 **/dist
+**/.sst
+docker
+
 LICENSE
 README.md
