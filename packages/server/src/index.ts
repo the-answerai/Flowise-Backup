@@ -158,7 +158,7 @@ export class App {
             // '/api/v1/public-chatbotConfig',
             // // '/api/v1/prediction/',
             // '/api/v1/vector/upsert/',
-            // '/api/v1/node-icon/',
+            '/api/v1/node-icon/'
             // '/api/v1/components-credentials-icon/',
             // '/api/v1/chatflows-streaming',
             // '/api/v1/openai-assistants-file',
@@ -204,11 +204,11 @@ export class App {
         })
         this.app.use((req, res, next) => {
             /// ADD Authorization cookie
-            if (res.locals?.cookie?.Authorization) {
-                req.headers.authorization = `Bearer ${res.locals.cookie.Authorization}`
-            }
-            if (req.url.includes('/api/v1/')) {
-                whitelistURLs.some((url) => req.url.includes(url)) ? next() : jwtCheck(req, res, next)
+            if (req.url.includes('/api/v1/') && !whitelistURLs.some((url) => req.url.includes(url))) {
+                if (res.locals?.cookie?.Authorization && !req.headers.authorization) {
+                    req.headers.authorization = `Bearer ${res.locals.cookie.Authorization}`
+                }
+                return jwtCheck(req, res, next)
             } else next()
         })
 
