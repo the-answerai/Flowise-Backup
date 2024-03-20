@@ -1,6 +1,5 @@
 # editor
 .idea
-
 # dependencies
 **/node_modules
 **/package-lock.json
@@ -37,6 +36,8 @@
 ## secrets
 **/*.key
 **/api.json
+**/*.pem
+.env.*
 
 ## uploads
 **/uploads
