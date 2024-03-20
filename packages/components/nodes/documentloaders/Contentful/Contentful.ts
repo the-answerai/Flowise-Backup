@@ -1,4 +1,4 @@
-import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { ICommonObject, INode, INodeData, INodeParams, INodeOutputsValue } from '../../../src/Interface'
 import { TextSplitter } from 'langchain/text_splitter'
 import { BaseDocumentLoader } from 'langchain/document_loaders/base'
 import { Block, Inline, Node, helpers } from '@contentful/rich-text-types'
@@ -43,10 +43,14 @@ export function documentToPlainTextString(
                 const embeddedContentObject = node.data.target
                 // Call processContentObject on the embedded content object
                 // You might need to adjust how you access the configuration for specific content types
-                nodeTextValue = processContentObjectMethod(
-                    embeddedContentObject,
-                    parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]
-                )
+                if (parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]) {
+                    nodeTextValue = processContentObjectMethod(
+                        embeddedContentObject,
+                        parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]
+                    )
+                } else {
+                    nodeTextValue = documentToPlainTextString(node, blockDivisor, parsingRules, processContentObjectMethod)
+                }
             } else {
                 nodeTextValue = documentToPlainTextString(node, blockDivisor, parsingRules, processContentObjectMethod)
             }
@@ -73,6 +77,7 @@ class Contentful_DocumentLoaders implements INode {
     baseClasses: string[]
     credential: INodeParams
     inputs?: INodeParams[]
+    outputs: INodeOutputsValue[]
 
     constructor() {
         this.label = 'Contentful'
@@ -152,6 +157,18 @@ class Contentful_DocumentLoaders implements INode {
                 additionalParams: true
             }
         ]
+        this.outputs = [
+            {
+                label: 'Documents',
+                name: 'document',
+                baseClasses: this.baseClasses
+            },
+            {
+                label: 'String',
+                name: 'stringOutput',
+                baseClasses: ['string', 'json']
+            }
+        ]
     }
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
@@ -190,9 +207,10 @@ class Contentful_DocumentLoaders implements INode {
             docs = await loader.load()
         }
 
+        const finaldocs = []
         if (metadata) {
             const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
-            let finaldocs = []
+
             for (const doc of docs) {
                 const newdoc = {
                     ...doc,
@@ -203,10 +221,25 @@ class Contentful_DocumentLoaders implements INode {
                 }
                 finaldocs.push(newdoc)
             }
-            return finaldocs
+        } else {
+            finaldocs.push(...docs)
         }
 
-        return docs
+        // Helper method to convert a Document object to plain text representation
+        const documentToPlainText = (doc: Document): string => {
+            // Assuming Document has a pageContent property containing the content
+            // You may need to adjust this to fit your needs
+            return doc.pageContent
+        }
+
+        // Process documents based on the determined output type
+        if (nodeData?.outputs?.output === 'stringOutput') {
+            // Convert loaded documents to plain text
+            return finaldocs.map((doc) => documentToPlainText(doc))
+        } else {
+            // Return Document objects
+            return finaldocs
+        }
     }
 }
 
@@ -301,7 +334,7 @@ class ContentfulLoader extends BaseDocumentLoader {
 
         if (typeof configUtility === 'string') {
             try {
-                this.configUtility = JSON.parse(JSON.parse(configUtility).config)[0]
+                this.configUtility = JSON.parse(configUtility)?.config
             } catch (error) {
                 console.warn('Failed to parse config:', error)
                 this.configUtility = {
