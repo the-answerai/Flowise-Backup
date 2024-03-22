@@ -184,6 +184,7 @@ class Contentful_DocumentLoaders implements INode {
 
         const accessToken = getCredentialParam('accessToken', credentialData, nodeData)
         const spaceId = getCredentialParam('spaceId', credentialData, nodeData)
+        const cdn = getCredentialParam('cdn', credentialData, nodeData)
 
         const contentfulOptions: ContentfulLoaderParams = {
             spaceId,
@@ -194,7 +195,8 @@ class Contentful_DocumentLoaders implements INode {
             limit,
             metadata,
             contentType,
-            configUtility
+            configUtility,
+            cdn
         }
 
         const loader = new ContentfulLoader(contentfulOptions)
@@ -253,6 +255,7 @@ interface ContentfulLoaderParams {
     includeAll?: boolean
     metadata?: any
     configUtility: ICommonObject
+    cdn?: string
 }
 
 interface ContentfulLoaderResponse {
@@ -297,10 +300,13 @@ class ContentfulLoader extends BaseDocumentLoader {
 
     public readonly configUtility: ICommonObject
 
+    public readonly cdn?: string
+
     constructor({
         spaceId,
         environmentId,
         accessToken,
+        cdn,
         metadata = {},
         include,
         limit,
@@ -310,6 +316,7 @@ class ContentfulLoader extends BaseDocumentLoader {
     }: ContentfulLoaderParams) {
         super()
         this.spaceId = spaceId
+        this.cdn = cdn
         this.environmentId = environmentId
         this.accessToken = accessToken
         this.contentType = contentType
@@ -370,8 +377,10 @@ class ContentfulLoader extends BaseDocumentLoader {
                         '\n',
                         this.configUtility.richTextParsingRules,
                         this.processContentObject
-                    ) // TODO: add support for embedded assets and entries
-                    return `${fieldName}: ${plainText}\n\n`
+                    )
+
+                    const safePlainText = plainText.replaceAll('"', '')
+                    return `${fieldName}: ${safePlainText}\n\n`
                 }
                 // For string fields
                 else if (typeof fieldValue === 'string') {
@@ -428,7 +437,8 @@ class ContentfulLoader extends BaseDocumentLoader {
         const client = contentful.createClient({
             space: this.spaceId,
             environment: this.environmentId,
-            accessToken: this.accessToken
+            accessToken: this.accessToken,
+            host: this.cdn
         })
 
         do {
