@@ -13,7 +13,8 @@ ARG NODE_VERSION=21
 FROM node:${NODE_VERSION}-alpine as base
 
 # Set working directory for all build stages.
-WORKDIR /usr/src/packages
+WORKDIR /app
+
 RUN apk add g++ make py3-pip
 RUN apk add --update libc6-compat python3 make g++
 # needed for pdfjs-dist
@@ -39,7 +40,7 @@ RUN --mount=type=bind,source=package.json,target=package.json \
   --mount=type=bind,source=packages/components/package.json,target=packages/components/package.json \
   --mount=type=bind,source=yarn.lock,target=yarn.lock \
   --mount=type=cache,target=/root/.yarn \
-  yarn install --production --frozen-lockfile --ignore-engines
+  YARN_CACHE_FOLDER=/root/.yarn yarn install --production --frozen-lockfile --ignore-engines
 
 ################################################################################
 # Create a stage for building the application.
@@ -55,12 +56,12 @@ RUN --mount=type=bind,source=package.json,target=package.json \
   --mount=type=bind,source=packages/components/package.json,target=packages/components/package.json \
   --mount=type=bind,source=yarn.lock,target=yarn.lock \
   --mount=type=cache,target=/root/.yarn \
-  yarn install --frozen-lockfile --ignore-engines
+  YARN_CACHE_FOLDER=/root/.yarn yarn install --frozen-lockfile --ignore-engines
 
 # Copy the rest of the source files into the image.
 COPY . .
 # Run the build script.
-RUN yarn run build
+RUN --mount=type=cache,target=/app/node_modules/.cache yarn run build
 
 ################################################################################
 # Create a new stage to run the application with minimal runtime dependencies
@@ -83,20 +84,20 @@ COPY packages/server/package.json ./packages/server/package.json
 
 # Copy the production dependencies from the deps stage and also
 # the built application from the build stage into the image.
-COPY --from=deps /usr/src/packages/packages/components/node_modules ./packages/components/node_modules
-COPY --from=deps /usr/src/packages/packages/server/node_modules ./packages/server/node_modules
-COPY --from=deps /usr/src/packages/packages/ui/node_modules ./packages/ui/node_modules
-COPY --from=deps /usr/src/packages/packages/embed/node_modules ./packages/embed/node_modules
-COPY --from=deps /usr/src/packages/packages/embed-react/node_modules ./packages/embed-react/node_modules
-COPY --from=build /usr/src/packages/node_modules ./node_modules
-COPY --from=build /usr/src/packages/packages/components/dist ./packages/components/dist
-COPY --from=build /usr/src/packages/packages/components/nodes ./packages/components/nodes
-COPY --from=build /usr/src/packages/packages/ui/build ./packages/ui/build
-COPY --from=build /usr/src/packages/packages/embed/dist ./packages/embed/dist
-COPY --from=build /usr/src/packages/packages/embed-react/dist ./packages/embed-react/dist
-COPY --from=build /usr/src/packages/packages/server/dist ./packages/server/dist
-COPY --from=build /usr/src/packages/packages/server/bin ./packages/server/bin
-COPY --from=build /usr/src/packages/packages/server/marketplaces ./packages/server/marketplaces
+COPY --from=deps /app/packages/components/node_modules ./packages/components/node_modules
+COPY --from=deps /app/packages/server/node_modules ./packages/server/node_modules
+COPY --from=deps /app/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=deps /app/packages/embed/node_modules ./packages/embed/node_modules
+COPY --from=deps /app/packages/embed-react/node_modules ./packages/embed-react/node_modules
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/components/dist ./packages/components/dist
+COPY --from=build /app/packages/components/nodes ./packages/components/nodes
+COPY --from=build /app/packages/ui/build ./packages/ui/build
+COPY --from=build /app/packages/embed/dist ./packages/embed/dist
+COPY --from=build /app/packages/embed-react/dist ./packages/embed-react/dist
+COPY --from=build /app/packages/server/dist ./packages/server/dist
+COPY --from=build /app/packages/server/bin ./packages/server/bin
+COPY --from=build /app/packages/server/marketplaces ./packages/server/marketplaces
 
 # Expose the port that the application listens on.
 EXPOSE 4000

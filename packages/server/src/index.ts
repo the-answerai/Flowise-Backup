@@ -156,7 +156,7 @@ export class App {
             // '/api/v1/chatflows/apikey/',
             // '/api/v1/public-chatflows',
             // '/api/v1/public-chatbotConfig',
-            // // '/api/v1/prediction/',
+            '/api/v1/prediction/',
             // '/api/v1/vector/upsert/',
             '/api/v1/node-icon/'
             // '/api/v1/components-credentials-icon/',
@@ -214,20 +214,20 @@ export class App {
 
         this.app.use((req, res, next) => {
             if (req.url.includes('/api/v1/')) {
-                if (req.auth?.token) {
-                    res.cookie('Authorization', req.auth?.token, {
-                        // name:
-                        //   process.env.NODE_ENV === 'production'
-                        //     ? `__Secure-next-auth.session-token`
-                        //     : `next-auth.session-token`,
-                        httpOnly: true,
-                        sameSite: 'none',
-                        // path: '/',
-                        secure: true
-                    })
-                }
-
                 if (!whitelistURLs.some((url) => req.url.includes(url))) {
+                    if (req.auth?.token) {
+                        res.cookie('Authorization', req.auth?.token, {
+                            // name:
+                            //   process.env.NODE_ENV === 'production'
+                            //     ? `__Secure-next-auth.session-token`
+                            //     : `next-auth.session-token`,
+                            httpOnly: true,
+                            sameSite: 'none',
+                            // path: '/',
+                            secure: true
+                        })
+                    }
+
                     const isInvalidOrg =
                         (!!process.env.AUTH0_ORGANIZATION_ID || !!req?.auth?.payload?.org_id) &&
                         process.env.AUTH0_ORGANIZATION_ID !== req?.auth?.payload?.org_id
@@ -532,19 +532,22 @@ export class App {
                 // Update chatflowpool inSync to fallse, to build Langchain again because data has been changed
                 this.chatflowPool.updateInSync(chatflow.id, false)
             }
-            const ANSWERAI_DOMAIN = req.auth?.payload.answersDomain ?? process.env.ANSWERAI_DOMAIN ?? 'https://beta.theanswer.ai'
-            await fetch(ANSWERAI_DOMAIN + '/api/sidekicks/new', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: 'Bearer ' + req.auth?.token!
-                },
-                body: JSON.stringify({
-                    chatflow: result,
-                    chatflowDomain: req.auth?.payload?.chatflowDomain
+            try {
+                const ANSWERAI_DOMAIN = req.auth?.payload.answersDomain ?? process.env.ANSWERAI_DOMAIN ?? 'https://beta.theanswer.ai'
+                await fetch(ANSWERAI_DOMAIN + '/api/sidekicks/new', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + req.auth?.token!
+                    },
+                    body: JSON.stringify({
+                        chatflow: result,
+                        chatflowDomain: req.auth?.payload?.chatflowDomain
+                    })
                 })
-            })
-
+            } catch (err) {
+                return res.status(500).send('Error saving to Answers')
+            }
             return res.json(result)
         })
 

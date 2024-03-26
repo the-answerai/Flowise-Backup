@@ -10,7 +10,7 @@ for i in $(env | grep MY_APP_); do
   #find /usr/share/nginx/html -type f -exec sed -i "s|${key}|${value}|g" '{}' +
 
   # sed JS and CSS only
-  find /usr/src/packages/packages/ui -type f \( -name '*.js' -o -name '*.css' \) -exec sed -i "s|${key}|${value}|g" '{}' +
+  find /app/packages/ui -type f \( -name '*.js' -o -name '*.css' \) -exec sed -i "s|${key}|${value}|g" '{}' +
 done
 
 exec "$@"
