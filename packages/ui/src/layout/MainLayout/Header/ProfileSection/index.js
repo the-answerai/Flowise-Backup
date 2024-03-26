@@ -31,11 +31,13 @@ import AboutDialog from 'ui-component/dialog/AboutDialog'
 import { IconLogout, IconSettings, IconInfoCircle } from '@tabler/icons'
 
 import './index.css'
+import { useAuth0 } from '@auth0/auth0-react'
 
 // ==============================|| PROFILE MENU ||============================== //
 
 const ProfileSection = ({ username, handleLogout }) => {
     const theme = useTheme()
+    const { user } = useAuth0()
 
     const customization = useSelector((state) => state.customization)
 
@@ -147,7 +149,7 @@ const ProfileSection = ({ username, handleLogout }) => {
                                                     </ListItemIcon>
                                                     {/* <ListItemText primary={<Typography variant='body2'>About Flowise</Typography>} /> */}
                                                 </ListItemButton>
-                                                {localStorage.getItem('username') && localStorage.getItem('password') && (
+                                                {user && (
                                                     <ListItemButton
                                                         sx={{ borderRadius: `${customization.borderRadius}px` }}
                                                         onClick={handleLogout}

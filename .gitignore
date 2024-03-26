@@ -1,10 +1,9 @@
 # editor
 .idea
-
 # dependencies
 **/node_modules
 **/package-lock.json
-**/yarn.lock
+# **/yarn.lock
 
 ## logs
 **/logs
@@ -37,6 +36,8 @@
 ## secrets
 **/*.key
 **/api.json
+**/*.pem
+.env.*
 
 ## uploads
 **/uploads
@@ -45,3 +46,6 @@
 **/*.tgz
 
 daisy
+
+# sst
+.sst

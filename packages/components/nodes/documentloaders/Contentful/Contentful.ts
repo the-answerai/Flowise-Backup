@@ -43,7 +43,7 @@ export function documentToPlainTextString(
                 const embeddedContentObject = node.data.target
                 // Call processContentObject on the embedded content object
                 // You might need to adjust how you access the configuration for specific content types
-                if (parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]) {
+                if (parsingRules?.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]) {
                     nodeTextValue = processContentObjectMethod(
                         embeddedContentObject,
                         parsingRules.embeddedContentTypes[embeddedContentObject.sys.contentType.sys.id]
@@ -299,6 +299,7 @@ class ContentfulLoader extends BaseDocumentLoader {
     public readonly metadata?: ICommonObject
 
     public readonly configUtility: ICommonObject
+    queryOveride: any
 
     public readonly cdn?: string
 
@@ -342,6 +343,9 @@ class ContentfulLoader extends BaseDocumentLoader {
         if (typeof configUtility === 'string') {
             try {
                 this.configUtility = JSON.parse(configUtility)?.config
+                if (typeof JSON.parse(configUtility)?.queryOveride !== 'undefined') {
+                    this.queryOveride = JSON.parse(configUtility)?.queryOveride
+                }
             } catch (error) {
                 console.warn('Failed to parse config:', error)
                 this.configUtility = {
@@ -372,7 +376,7 @@ class ContentfulLoader extends BaseDocumentLoader {
             .map(([fieldName, fieldValue]) => {
                 // Check if the field is a rich text field
                 if (typeof fieldValue === 'object' && fieldValue.nodeType === 'document') {
-                    const plainText = documentToPlainTextString(
+                    let plainText = documentToPlainTextString(
                         fieldValue,
                         '\n',
                         this.configUtility.richTextParsingRules,
@@ -384,7 +388,8 @@ class ContentfulLoader extends BaseDocumentLoader {
                 }
                 // For string fields
                 else if (typeof fieldValue === 'string') {
-                    return `${fieldName}: ${fieldValue}\n\n`
+                    const cleanedValue = fieldValue.replaceAll('"', '')
+                    return `${fieldName}: ${cleanedValue}\n\n`
                 }
 
                 // TODO: Handle references to other entries and assets
@@ -432,6 +437,20 @@ class ContentfulLoader extends BaseDocumentLoader {
 
         if (this.contentType) {
             query.content_type = this.contentType
+        }
+
+        if (this.queryOveride) {
+            try {
+                const parsedQuery = JSON.parse(this.queryOveride) // Parse the JSON string
+                for (const key in parsedQuery) {
+                    // Construct the query object for each key-value pair
+                    if (parsedQuery[key] !== '') {
+                        query[`fields.${key}[in]`] = parsedQuery[key]
+                    }
+                }
+            } catch (e) {
+                console.log('Error parsing query overide', e)
+            }
         }
 
         const client = contentful.createClient({
