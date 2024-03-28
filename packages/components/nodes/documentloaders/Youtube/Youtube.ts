@@ -45,7 +45,7 @@ class Youtube_DocumentLoaders implements INode {
             }
         ]
     }
-    async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
+    async init(nodeData: INodeData, _: string, _options: ICommonObject): Promise<any> {
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
 
         const videoId = nodeData.inputs?.videoId as string
@@ -86,7 +86,7 @@ class YoutubeLoader extends BaseDocumentLoader {
         const transcript = await YoutubeTranscript.fetchTranscript(youtubeUrl)
         const concatenatedText = transcript.map((entry: any) => entry.text).join(' ')
         // console.log(concatenatedText)
-        console.log('Video ID:', this.videoId)
+        // console.log('Video ID:', this.videoId)
         return [
             new Document({
                 pageContent: concatenatedText,
