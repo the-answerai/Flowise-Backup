@@ -2,8 +2,7 @@ version: '3.1'
 
 services:
     flowise:
-        image: 005613854457.dkr.ecr.us-east-1.amazonaws.com/cdk-hnb659fds-container-assets-005613854457-us-east-1:latest
-
+        image: theanswerai/flowise
         restart: always
         environment:
             - PORT=${PORT}
@@ -27,6 +26,7 @@ services:
             - FLOWISE_SECRETKEY_OVERWRITE=${FLOWISE_SECRETKEY_OVERWRITE}
             - LOG_LEVEL=${LOG_LEVEL}
             - LOG_PATH=${LOG_PATH}
+            - BLOB_STORAGE_PATH=${BLOB_STORAGE_PATH}
             - DISABLE_FLOWISE_TELEMETRY=${DISABLE_FLOWISE_TELEMETRY}
         ports:
             - '${PORT}:${PORT}'

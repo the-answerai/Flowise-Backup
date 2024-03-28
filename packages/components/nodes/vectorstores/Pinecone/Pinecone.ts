@@ -1,8 +1,8 @@
 import { flatten } from 'lodash'
 import { Pinecone } from '@pinecone-database/pinecone'
-import { PineconeLibArgs, PineconeStore } from 'langchain/vectorstores/pinecone'
-import { Embeddings } from 'langchain/embeddings/base'
-import { Document } from 'langchain/document'
+import { PineconeStoreParams, PineconeStore } from '@langchain/pinecone'
+import { Embeddings } from '@langchain/core/embeddings'
+import { Document } from '@langchain/core/documents'
 import { ICommonObject, INode, INodeData, INodeOutputsValue, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
 import { addMMRInputParams, resolveVectorStoreOrRetriever } from '../VectorStoreUtils'
@@ -120,7 +120,7 @@ class Pinecone_VectorStores implements INode {
                 }
             }
 
-            const obj: PineconeLibArgs = {
+            const obj: PineconeStoreParams = {
                 pineconeIndex
             }
 
@@ -148,6 +148,8 @@ class Pinecone_VectorStores implements INode {
             apiKey: pineconeApiKey
         })
 
+        await client.describeIndex(index)
+
         const pineconeIndex = client.Index(index)
 
         const flattenDocs = docs && docs.length ? flatten(docs) : []
@@ -158,14 +160,13 @@ class Pinecone_VectorStores implements INode {
             }
         }
 
-        const obj: PineconeLibArgs = {
+        const obj: PineconeStoreParams = {
             pineconeIndex
         }
 
         if (pineconeNamespace) obj.namespace = pineconeNamespace
-        let metadatafilter = {}
         if (pineconeMetadataFilter) {
-            metadatafilter = typeof pineconeMetadataFilter === 'object' ? pineconeMetadataFilter : JSON.parse(pineconeMetadataFilter)
+            const metadatafilter = typeof pineconeMetadataFilter === 'object' ? pineconeMetadataFilter : JSON.parse(pineconeMetadataFilter)
             obj.filter = metadatafilter
         }
 

@@ -37,6 +37,8 @@
 ## secrets
 **/*.key
 **/api.json
+**/*.pem
+/.env.*
 
 ## uploads
 **/uploads

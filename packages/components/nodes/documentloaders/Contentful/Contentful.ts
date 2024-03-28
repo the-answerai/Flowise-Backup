@@ -418,7 +418,7 @@ class ContentfulLoader extends BaseDocumentLoader {
     }
 
     private async runQuery(): Promise<Document[]> {
-        const params: ICommonObject = { pageSize: 100, skip: 0 }
+        // const params: ICommonObject = { pageSize: 100, skip: 0 }
         let data: ContentfulLoaderResponse
         let returnPages: ContentfulEntry[] = []
         let query = this.metadata || {}
